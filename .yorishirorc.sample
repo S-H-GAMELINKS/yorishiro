@@ -1,0 +1,90 @@
+# Yorishiro Configuration
+#
+# Copy this file to ~/.yorishirorc (global) or .lyorishirorc (project-local)
+# and customize to your needs.
+
+# ============================================================
+# Provider
+# ============================================================
+
+# Anthropic (Claude)
+use provider: :anthropic,
+    api_key: ENV["ANTHROPIC_API_KEY"],
+    model: "claude-sonnet-4-20250514"
+
+# OpenAI (ChatGPT)
+# use provider: :open_ai,
+#     api_key: ENV["OPENAI_API_KEY"],
+#     model: "gpt-4o"
+
+# Ollama (Local)
+# use provider: :ollama,
+#     model: "llama3.1"
+
+# ============================================================
+# System Prompt
+# ============================================================
+
+system_prompt <<~PROMPT
+  You are a helpful coding assistant.
+  When modifying files, always explain what you're changing and why.
+PROMPT
+
+# ============================================================
+# Plan Mode
+# ============================================================
+
+# Set to true to start in plan mode by default
+plan_mode false
+
+# ============================================================
+# Built-in Tools
+# ============================================================
+
+# File reading (no permission required)
+allow_tool Yorishiro::Tools::ReadFile.new
+
+# File writing (permission required every time)
+allow_tool Yorishiro::Tools::WriteFile.new
+
+# File listing / glob (no permission required)
+allow_tool Yorishiro::Tools::ListFiles.new
+
+# Command execution (pattern-based permission)
+# Commands matching allow_commands patterns run automatically.
+# Other commands prompt for permission: [y] once, [a] always, [n] deny.
+allow_tool Yorishiro::Tools::ExecuteCommand.new,
+  allow_commands: [
+    "ls *",
+    "cat *",
+    "git *",
+    "bundle exec *",
+    "ruby *"
+  ]
+
+# ============================================================
+# MCP Servers
+# ============================================================
+
+# Filesystem MCP server
+# mcp_server "filesystem",
+#   command: "npx",
+#   args: ["-y", "@modelcontextprotocol/server-filesystem", Dir.pwd]
+
+# GitHub MCP server
+# mcp_server "github",
+#   command: "gh",
+#   args: ["mcp"],
+#   env: { "GITHUB_TOKEN" => ENV["GITHUB_TOKEN"] }
+
+# ============================================================
+# Custom Skills (Slash Commands)
+# ============================================================
+
+# class GitStatusSkill < Yorishiro::Skill
+#   def name = "git_status"
+#   def description = "Show git status"
+#   def execute(_context) = `git status`
+# end
+#
+# skill GitStatusSkill.new

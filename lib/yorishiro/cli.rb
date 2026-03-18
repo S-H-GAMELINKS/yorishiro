@@ -1,0 +1,344 @@
+# frozen_string_literal: true
+
+require "reline"
+require "optparse"
+
+module Yorishiro
+  class CLI
+    def initialize
+      @conversation = nil
+      @provider = nil
+      @plan_mode = false
+      @output = $stdout
+    end
+
+    def start
+      parse_options!
+      setup!
+      print_welcome
+      repl_loop
+    ensure
+      @mcp_manager&.stop_all
+    end
+
+    private
+
+    def parse_options!
+      @cli_opts = {}
+
+      OptionParser.new do |opts|
+        opts.banner = "Usage: yorishiro [options]"
+
+        opts.on("--provider PROVIDER", "Provider (anthropic, open_ai, ollama)") do |v|
+          @cli_opts[:provider] = v.to_sym
+        end
+
+        opts.on("--model MODEL", "Model name") do |v|
+          @cli_opts[:model] = v
+        end
+
+        opts.on("--plan", "Start in plan mode") do
+          @cli_opts[:plan_mode] = true
+        end
+
+        opts.on("--version", "Show version") do
+          @output.puts "yorishiro #{Yorishiro::VERSION}"
+          exit
+        end
+
+        opts.on("--help", "Show help") do
+          @output.puts opts
+          exit
+        end
+      end.parse!
+    end
+
+    def setup!
+      config = Yorishiro.configuration
+      config.load!
+
+      config.use(provider: @cli_opts[:provider]) if @cli_opts[:provider]
+      config.instance_variable_set(:@model, @cli_opts[:model]) if @cli_opts[:model]
+
+      @provider = Provider.build(config)
+      @plan_mode = @cli_opts.fetch(:plan_mode, config.plan_mode_enabled)
+      @conversation = Conversation.new(system_prompt: config.system_prompt_text)
+
+      @mcp_manager = MCP::ServerManager.new(
+        server_configs: config.mcp_servers,
+        configuration: config
+      )
+      @mcp_manager.start_all
+    end
+
+    def print_welcome
+      @output.puts "Yorishiro v#{VERSION} (#{Yorishiro.configuration.provider_name}:#{@provider.model_name})"
+      @output.puts "Type your message (Enter twice to send, /help for commands)"
+      @output.puts "Plan mode: ON" if @plan_mode
+      @output.puts
+    end
+
+    def repl_loop
+      loop do
+        input = read_input
+        break if input.nil?
+        next if input.strip.empty?
+
+        if input.strip.start_with?("/")
+          handle_slash_command(input.strip)
+          next
+        end
+
+        process_user_input(input)
+      end
+    rescue Interrupt
+      @output.puts "\nGoodbye!"
+    end
+
+    def read_input
+      lines = []
+      empty_count = 0
+      prompt = "you> "
+
+      loop do
+        line = Reline.readline(prompt, true)
+        return nil if line.nil?
+
+        if line.empty?
+          empty_count += 1
+          break if empty_count >= 1 && !lines.empty?
+
+          lines << "" unless lines.empty?
+        else
+          empty_count = 0
+          lines << line
+        end
+        prompt = "  .. "
+      end
+
+      lines.join("\n")
+    end
+
+    def process_user_input(input)
+      @conversation.add_message(:user, input)
+
+      if @plan_mode
+        plan_then_execute
+      else
+        agent_loop
+      end
+    end
+
+    def agent_loop
+      loop do
+        tools = Yorishiro.configuration.tool_definitions
+
+        @output.print "\nassistant> "
+
+        result = @provider.chat(@conversation, tools: tools) do |text|
+          @output.print text
+        end
+
+        @output.puts
+        @output.puts
+
+        content = result[:content]
+        tool_calls = result[:tool_calls]
+
+        @conversation.add_message(:assistant, content, tool_calls: tool_calls.empty? ? nil : tool_calls)
+
+        break if tool_calls.empty?
+
+        execute_tool_calls(tool_calls)
+      end
+    end
+
+    def plan_then_execute
+      @output.puts "\n[Plan Mode] Generating plan..."
+
+      read_only_tools = Yorishiro.configuration.read_only_tool_definitions
+
+      loop do
+        @output.print "\nassistant> "
+
+        result = @provider.chat(@conversation, tools: read_only_tools) do |text|
+          @output.print text
+        end
+
+        @output.puts
+        @output.puts
+
+        content = result[:content]
+        tool_calls = result[:tool_calls]
+
+        @conversation.add_message(:assistant, content, tool_calls: tool_calls.empty? ? nil : tool_calls)
+
+        break if tool_calls.empty?
+
+        # read-only ツールはパーミッション不要で即実行
+        tool_calls.each do |tc|
+          tool = Yorishiro.configuration.find_tool(tc[:name])
+          unless tool
+            @conversation.add_tool_result(tool_call_id: tc[:id], content: "Error: Unknown tool '#{tc[:name]}'")
+            next
+          end
+
+          @output.puts "[Tool] Executing: #{tc[:name]}(#{format_args(tc[:arguments])})"
+          begin
+            output = tool.execute(**symbolize_keys(tc[:arguments]))
+            @output.puts "[Tool] Result: #{truncate(output, 200)}"
+            @conversation.add_tool_result(tool_call_id: tc[:id], content: output)
+          rescue StandardError => e
+            error_msg = "Error: #{e.message}"
+            @output.puts "[Tool] #{error_msg}"
+            @conversation.add_tool_result(tool_call_id: tc[:id], content: error_msg)
+          end
+        end
+      end
+
+      answer = Reline.readline("Execute this plan? [y/n]: ", false)
+
+      if answer&.strip&.downcase == "y"
+        @output.puts "Executing plan..."
+        @conversation.add_message(:user, "Please execute the plan you just described.")
+        agent_loop
+      else
+        @output.puts "Plan execution cancelled."
+      end
+    end
+
+    def execute_tool_calls(tool_calls)
+      tool_calls.each do |tc|
+        tool = Yorishiro.configuration.find_tool(tc[:name])
+
+        unless tool
+          @output.puts "[Tool] Unknown tool: #{tc[:name]}"
+          @conversation.add_tool_result(tool_call_id: tc[:id], content: "Error: Unknown tool '#{tc[:name]}'")
+          next
+        end
+
+        permission = tool.permission_check(tc[:arguments])
+
+        if permission == :ask
+          result = ask_permission(tool, tc)
+          unless result == :allowed
+            @conversation.add_tool_result(tool_call_id: tc[:id], content: "Permission denied by user.")
+            next
+          end
+        end
+
+        @output.puts "[Tool] Executing: #{tc[:name]}(#{format_args(tc[:arguments])})"
+
+        begin
+          output = tool.execute(**symbolize_keys(tc[:arguments]))
+          @output.puts "[Tool] Result: #{truncate(output, 200)}"
+          @conversation.add_tool_result(tool_call_id: tc[:id], content: output)
+        rescue StandardError => e
+          error_msg = "Error: #{e.message}"
+          @output.puts "[Tool] #{error_msg}"
+          @conversation.add_tool_result(tool_call_id: tc[:id], content: error_msg)
+        end
+      end
+    end
+
+    def ask_permission(tool, tool_call)
+      @output.puts
+      @output.puts "[Permission] #{tool.name}"
+      tool_call[:arguments]&.each do |key, value|
+        str = value.to_s
+        if str.length > 80 || str.include?("\n")
+          @output.puts "  #{key}:"
+          preview = truncate(str, 500)
+          preview.each_line { |line| @output.puts "    #{line}" }
+        else
+          @output.puts "  #{key}: #{str}"
+        end
+      end
+      answer = Reline.readline("[y] Allow once  [a] Always allow  [n] Deny: ", false)&.strip&.downcase
+
+      case answer
+      when "y"
+        :allowed
+      when "a"
+        tool.session_allow!(tool_call[:arguments][:command] || tool_call[:arguments]["command"]) if tool.respond_to?(:session_allow!)
+        :allowed
+      else
+        :denied
+      end
+    end
+
+    def handle_slash_command(input)
+      command, *args = input.split(/\s+/)
+
+      case command
+      when "/plan"
+        @plan_mode = !@plan_mode
+        @output.puts "Plan mode: #{@plan_mode ? "ON" : "OFF"}"
+      when "/clear"
+        @conversation = Conversation.new(system_prompt: Yorishiro.configuration.system_prompt_text)
+        @output.puts "Conversation cleared."
+      when "/tools"
+        list_tools
+      when "/skills"
+        list_skills
+      when "/exit", "/quit"
+        @output.puts "Goodbye!"
+        exit
+      when "/help"
+        print_help
+      else
+        skill = Yorishiro.configuration.skills.find { |s| "/#{s.name}" == command }
+        if skill
+          result = skill.execute({ conversation: @conversation, args: args })
+          @output.puts result if result
+        else
+          @output.puts "Unknown command: #{command}. Type /help for available commands."
+        end
+      end
+    end
+
+    def list_tools
+      tools = Yorishiro.configuration.allowed_tools
+      if tools.empty?
+        @output.puts "No tools registered."
+      else
+        tools.each { |t| @output.puts "  #{t.name} - #{t.description}" }
+      end
+    end
+
+    def list_skills
+      skills = Yorishiro.configuration.skills
+      if skills.empty?
+        @output.puts "No skills registered."
+      else
+        skills.each { |s| @output.puts "  /#{s.name} - #{s.description}" }
+      end
+    end
+
+    def print_help
+      @output.puts <<~HELP
+        Commands:
+          /plan     - Toggle plan mode
+          /clear    - Clear conversation
+          /tools    - List available tools
+          /skills   - List available skills
+          /exit     - Exit yorishiro
+          /help     - Show this help
+      HELP
+    end
+
+    def format_args(args)
+      return "" unless args
+
+      args.map { |k, v| "#{k}: #{truncate(v.to_s, 50)}" }.join(", ")
+    end
+
+    def truncate(str, max)
+      str.length > max ? "#{str[0...max]}..." : str
+    end
+
+    def symbolize_keys(hash)
+      hash.transform_keys(&:to_sym)
+    end
+  end
+end
