@@ -1,5 +1,8 @@
 ## [Unreleased]
 
+- Stream Ollama responses even when tools are provided, allowing text and tool calls to be handled from NDJSON chunks.
+- Add `OLLAMA_KEEP_ALIVE` support for Ollama chat requests, defaulting to `10m`.
+
 ## [0.1.0] - 2026-03-18
 
 - Initial release

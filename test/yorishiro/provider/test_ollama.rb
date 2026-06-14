@@ -57,15 +57,15 @@ class TestProviderOllama < Minitest::Test
     assert_equal ["Hello!"], chunks
   end
 
-  def test_chat_with_tools_uses_no_stream
+  def test_chat_with_tools_uses_stream
     tools = [{ name: "read_file", description: "Read a file", input_schema: { type: "object", properties: { path: { type: "string" } } } }]
-    stub_ollama_no_stream_tool_call("read_file", { "path" => "/tmp/test" })
+    stub_ollama_stream_tool_call("read_file", { "path" => "/tmp/test" })
 
     result = @provider.chat(@conversation, tools: tools)
 
     assert_requested(:post, "http://localhost:11434/api/chat") do |req|
       body = JSON.parse(req.body)
-      body["stream"] == false && body["tools"].is_a?(Array)
+      body["stream"] == true && body["tools"].is_a?(Array)
     end
 
     assert_equal 1, result[:tool_calls].length
@@ -75,7 +75,7 @@ class TestProviderOllama < Minitest::Test
 
   def test_chat_with_tools_returns_text_and_tool_calls
     tools = [{ name: "write_file", description: "Write a file", input_schema: { type: "object" } }]
-    stub_ollama_no_stream_with_text("I'll write that file for you.", "write_file", { "path" => "/tmp/out", "content" => "hi" })
+    stub_ollama_stream_with_text_and_tool_call("I'll write that file for you.", "write_file", { "path" => "/tmp/out", "content" => "hi" })
 
     chunks = []
     result = @provider.chat(@conversation, tools: tools) { |text| chunks << text }
@@ -114,12 +114,11 @@ class TestProviderOllama < Minitest::Test
   def test_debug_log_outputs_to_stderr
     ENV["YORISHIRO_DEBUG"] = "1"
     tools = [{ name: "read_file", description: "Read a file", input_schema: { type: "object", properties: { path: { type: "string" } } } }]
-    stub_ollama_no_stream_tool_call("read_file", { "path" => "/tmp/test" })
+    stub_ollama_stream_tool_call("read_file", { "path" => "/tmp/test" })
 
     stderr_output = capture_io { @provider.chat(@conversation, tools: tools) }[1]
 
     assert_includes stderr_output, "[DEBUG] Ollama request"
-    assert_includes stderr_output, "[DEBUG] Ollama response"
   ensure
     ENV.delete("YORISHIRO_DEBUG")
   end
@@ -127,7 +126,7 @@ class TestProviderOllama < Minitest::Test
   def test_debug_log_silent_when_disabled
     ENV.delete("YORISHIRO_DEBUG")
     tools = [{ name: "read_file", description: "Read a file", input_schema: { type: "object", properties: { path: { type: "string" } } } }]
-    stub_ollama_no_stream_tool_call("read_file", { "path" => "/tmp/test" })
+    stub_ollama_stream_tool_call("read_file", { "path" => "/tmp/test" })
 
     stderr_output = capture_io { @provider.chat(@conversation, tools: tools) }[1]
 
@@ -158,31 +157,38 @@ class TestProviderOllama < Minitest::Test
       .to_return(status: 200, body: body, headers: { "Content-Type" => "application/x-ndjson" })
   end
 
-  def stub_ollama_no_stream_tool_call(name, arguments)
-    body = JSON.generate({
-                           message: {
-                             role: "assistant",
-                             content: "",
-                             tool_calls: [{ function: { name: name, arguments: arguments } }]
-                           },
-                           done: true
-                         })
+  def stub_ollama_stream_tool_call(name, arguments)
+    body = "#{[
+      JSON.generate({
+                      message: {
+                        role: "assistant",
+                        content: "",
+                        tool_calls: [{ function: { name: name, arguments: arguments } }]
+                      },
+                      done: false
+                    }),
+      JSON.generate({ message: { role: "assistant", content: "" }, done: true })
+    ].join("\n")}\n"
 
     stub_request(:post, "http://localhost:11434/api/chat")
-      .to_return(status: 200, body: body, headers: { "Content-Type" => "application/json" })
+      .to_return(status: 200, body: body, headers: { "Content-Type" => "application/x-ndjson" })
   end
 
-  def stub_ollama_no_stream_with_text(text, tool_name, tool_arguments)
-    body = JSON.generate({
-                           message: {
-                             role: "assistant",
-                             content: text,
-                             tool_calls: [{ function: { name: tool_name, arguments: tool_arguments } }]
-                           },
-                           done: true
-                         })
+  def stub_ollama_stream_with_text_and_tool_call(text, tool_name, tool_arguments)
+    body = "#{[
+      JSON.generate({ message: { role: "assistant", content: text }, done: false }),
+      JSON.generate({
+                      message: {
+                        role: "assistant",
+                        content: "",
+                        tool_calls: [{ function: { name: tool_name, arguments: tool_arguments } }]
+                      },
+                      done: false
+                    }),
+      JSON.generate({ message: { role: "assistant", content: "" }, done: true })
+    ].join("\n")}\n"
 
     stub_request(:post, "http://localhost:11434/api/chat")
-      .to_return(status: 200, body: body, headers: { "Content-Type" => "application/json" })
+      .to_return(status: 200, body: body, headers: { "Content-Type" => "application/x-ndjson" })
   end
 end
