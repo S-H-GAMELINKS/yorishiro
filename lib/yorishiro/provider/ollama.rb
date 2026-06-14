@@ -27,19 +27,16 @@ module Yorishiro
 
         body = {
           model: @model_name,
-          messages: format_messages(conversation.to_api_messages)
+          messages: format_messages(conversation.to_api_messages),
+          keep_alive: ENV.fetch("OLLAMA_KEEP_ALIVE", "10m"),
+          stream: true
         }
 
         headers = { "Content-Type" => "application/json" }
 
-        if tools.empty?
-          body[:stream] = true
-          post_stream(uri, headers: headers, body: body, &block)
-        else
-          body[:stream] = false
-          body[:tools] = format_tools(tools)
-          post_no_stream(uri, headers: headers, body: body, &block)
-        end
+        body[:tools] = format_tools(tools) unless tools.empty?
+
+        post_stream(uri, headers: headers, body: body, &block)
       end
 
       private
