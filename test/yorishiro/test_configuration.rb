@@ -68,6 +68,34 @@ class TestConfiguration < Minitest::Test
     assert @config.plan_mode_enabled
   end
 
+  def test_ollama_num_ctx_default_nil
+    assert_nil @config.ollama_num_ctx_value
+  end
+
+  def test_ollama_num_ctx_setter
+    @config.ollama_num_ctx(16_384)
+    assert_equal 16_384, @config.ollama_num_ctx_value
+  end
+
+  def test_auto_compact_default_true
+    assert @config.auto_compact_enabled
+  end
+
+  def test_auto_compact_setter
+    @config.auto_compact(false)
+    refute @config.auto_compact_enabled
+  end
+
+  def test_ollama_num_ctx_passed_to_provider
+    @config.use(provider: :ollama)
+    @config.ollama_num_ctx(4096)
+
+    provider = Yorishiro::Provider.build(@config)
+    assert_instance_of Yorishiro::Provider::Ollama, provider
+    # num_ctx flows through to the request options.
+    assert_equal 2048, provider.context_budget_tokens # 4096 - 2048 reserve
+  end
+
   def test_validate_missing_provider
     assert_raises(Yorishiro::ConfigurationError) { @config.validate! }
   end

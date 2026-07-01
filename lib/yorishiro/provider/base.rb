@@ -35,6 +35,13 @@ module Yorishiro
         nil
       end
 
+      # Token budget the conversation should be trimmed to before each request.
+      # nil means "no known context window" — the conversation is not trimmed.
+      # Providers with a fixed local context window (Ollama) override this.
+      def context_budget_tokens
+        nil
+      end
+
       private
 
       def default_model
@@ -119,7 +126,12 @@ module Yorishiro
 
     def self.build(config)
       provider_class = self.for(config.provider_name)
-      provider_class.new(api_key: config.api_key, model: config.model)
+
+      if config.provider_name == :ollama
+        provider_class.new(api_key: config.api_key, model: config.model, num_ctx: config.ollama_num_ctx_value)
+      else
+        provider_class.new(api_key: config.api_key, model: config.model)
+      end
     end
   end
 end

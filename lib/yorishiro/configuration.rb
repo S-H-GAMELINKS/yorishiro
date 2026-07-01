@@ -3,7 +3,8 @@
 module Yorishiro
   class Configuration
     attr_reader :provider_name, :api_key, :model, :allowed_tools, :skills,
-                :mcp_servers, :system_prompt_text, :plan_mode_enabled
+                :mcp_servers, :system_prompt_text, :plan_mode_enabled, :ollama_num_ctx_value,
+                :auto_compact_enabled
 
     def initialize
       @provider_name = nil
@@ -14,6 +15,8 @@ module Yorishiro
       @mcp_servers = {}
       @system_prompt_text = nil
       @plan_mode_enabled = false
+      @ollama_num_ctx_value = nil
+      @auto_compact_enabled = true
     end
 
     def use(provider:, api_key: nil, model: nil)
@@ -44,6 +47,19 @@ module Yorishiro
 
     def plan_mode(enabled)
       @plan_mode_enabled = enabled
+    end
+
+    # Override the Ollama context window (num_ctx). Set from .yorishirorc, e.g.
+    # `ollama_num_ctx 16384`. Also settable via the OLLAMA_NUM_CTX env var.
+    def ollama_num_ctx(value)
+      @ollama_num_ctx_value = value
+    end
+
+    # Toggle automatic context compaction (LLM summarization of old history
+    # when the conversation nears the context window). Enabled by default;
+    # disable from .yorishirorc with `auto_compact false`.
+    def auto_compact(enabled)
+      @auto_compact_enabled = enabled
     end
 
     def load!
