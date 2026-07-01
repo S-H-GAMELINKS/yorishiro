@@ -23,7 +23,7 @@ module Yorishiro
 
       def stop_all
         @servers.each_value do |server|
-          server[:transport].stop
+          server[:transport].close
         rescue StandardError => e
           warn "[MCP] Error stopping server: #{e.message}"
         end
@@ -33,14 +33,14 @@ module Yorishiro
       private
 
       def start_server(name, config)
-        transport = StdioTransport.new(
+        transport = ::MCP::Client::Stdio.new(
           command: config[:command],
           args: config.fetch(:args, []),
-          env: config.fetch(:env, {})
+          env: config.fetch(:env, {}).compact
         )
-        transport.start
 
         client = ::MCP::Client.new(transport: transport)
+        client.connect
 
         mcp_tools = client.tools
         mcp_tools.each do |mcp_tool|
