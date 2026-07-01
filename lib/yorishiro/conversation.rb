@@ -2,6 +2,10 @@
 
 module Yorishiro
   class Conversation
+    # Rough heuristic used to estimate token counts without a real tokenizer.
+    # English/code averages ~4 characters per token.
+    CHARS_PER_TOKEN = 4
+
     attr_reader :messages
 
     def initialize(system_prompt: nil)
@@ -52,7 +56,70 @@ module Yorishiro
       @messages.length
     end
 
+    # Rough estimate of the prompt size in tokens (system prompt + all messages).
+    def estimated_tokens
+      total = @system_prompt.to_s.length
+      total += @messages.sum { |msg| message_char_size(msg) }
+      (total.to_f / CHARS_PER_TOKEN).ceil
+    end
+
+    # Replace the oldest rounds with a single summary while keeping the most
+    # recent +keep_recent_rounds+ rounds verbatim. The block receives the old
+    # messages and must return the summary text; rounds are handled whole so a
+    # tool call is never split from its result, and the summary is inserted as a
+    # leading :user message (keeping the user-first ordering providers expect).
+    # Returns the number of messages that were compacted away (0 if there was
+    # nothing old enough to compact or the summary came back empty).
+    def compact!(keep_recent_rounds: 2)
+      starts = user_message_indices
+      return 0 if starts.length <= keep_recent_rounds
+
+      cut = starts[starts.length - keep_recent_rounds]
+      old = @messages[0...cut]
+      return 0 if old.empty?
+
+      summary = yield(old)
+      return 0 if summary.nil? || summary.strip.empty?
+
+      @messages = [summary_message(summary)] + (@messages[cut..] || [])
+      old.length
+    end
+
+    # Drop the oldest conversation rounds until the estimated size fits within
+    # +max_tokens+. A "round" starts at a :user message and includes the
+    # assistant reply and any tool results that follow, so whole rounds are
+    # removed together — never splitting an assistant tool_call from its tool
+    # result. The system prompt and the most recent round are always kept.
+    # Returns the number of messages removed.
+    def trim_to_budget!(max_tokens:)
+      removed_count = 0
+
+      while estimated_tokens > max_tokens
+        round_starts = user_message_indices
+        break if round_starts.length <= 1 # keep at least the latest round
+
+        removed = @messages.slice!(0, round_starts[1])
+        removed_count += removed.length
+      end
+
+      removed_count
+    end
+
     private
+
+    def user_message_indices
+      @messages.each_index.select { |i| @messages[i][:role] == :user }
+    end
+
+    def summary_message(summary)
+      { role: :user, content: "[Summary of earlier conversation]\n#{summary}" }
+    end
+
+    def message_char_size(msg)
+      size = msg[:content].to_s.length
+      size += msg[:tool_calls].to_s.length if msg[:tool_calls]
+      size
+    end
 
     def validate_role!(role)
       return if %i[user assistant tool].include?(role)

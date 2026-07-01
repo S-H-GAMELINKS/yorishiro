@@ -20,7 +20,7 @@ Metrics/MethodLength:
     - heredoc
 
 Metrics/ClassLength:
-  Max: 250
+  Max: 320
 
 Metrics/AbcSize:
   Max: 50

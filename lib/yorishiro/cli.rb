@@ -5,6 +5,9 @@ require "optparse"
 
 module Yorishiro
   class CLI
+    # Fraction of the context budget at which auto-compaction kicks in.
+    COMPACT_THRESHOLD = 0.8
+
     def initialize
       @conversation = nil
       @provider = nil
@@ -89,7 +92,13 @@ module Yorishiro
           next
         end
 
-        process_user_input(input)
+        begin
+          process_user_input(input)
+        rescue Yorishiro::ProviderError => e
+          @output.puts "\n[Error] #{e.message}"
+        rescue StandardError => e
+          @output.puts "\n[Error] #{e.class}: #{e.message}"
+        end
       end
     rescue Interrupt
       @output.puts "\nGoodbye!"
@@ -133,14 +142,7 @@ module Yorishiro
       loop do
         tools = Yorishiro.configuration.tool_definitions
 
-        @output.print "\nassistant> "
-
-        result = @provider.chat(@conversation, tools: tools) do |text|
-          @output.print text
-        end
-
-        @output.puts
-        @output.puts
+        result = request_completion(tools)
 
         content = result[:content]
         tool_calls = result[:tool_calls]
@@ -153,20 +155,80 @@ module Yorishiro
       end
     end
 
+    # Keep the conversation within the provider's context budget, stream one
+    # completion, then surface truncation / empty-response conditions so the
+    # session never silently goes quiet.
+    def request_completion(tools)
+      manage_context!
+
+      @output.print "\nassistant> "
+
+      result = @provider.chat(@conversation, tools: tools) do |text|
+        @output.print text
+      end
+
+      @output.puts
+      @output.puts
+
+      warn_if_empty_or_truncated(result)
+      result
+    end
+
+    # Auto-compact (summarize old history) when nearing the budget, then apply a
+    # mechanical trim as a fallback for anything still over the limit (e.g. a
+    # single oversized round, or when summarization failed).
+    def manage_context!
+      budget = @provider.context_budget_tokens
+      return unless budget
+
+      auto_compact_if_needed(budget)
+
+      removed = @conversation.trim_to_budget!(max_tokens: budget)
+      @output.puts "[i] Dropped #{removed} old message(s) to stay within the context limit." if removed.positive?
+    end
+
+    def auto_compact_if_needed(budget)
+      return unless Yorishiro.configuration.auto_compact_enabled
+      return unless @conversation.estimated_tokens > budget * COMPACT_THRESHOLD
+
+      compact_conversation
+    end
+
+    def compact_conversation
+      @output.puts "[i] Compacting context by summarizing earlier history..."
+      compacted = Compactor.new(@provider).compact(@conversation)
+      @output.puts "[i] #{compaction_notice(compacted)}"
+      compacted
+    rescue Yorishiro::ProviderError => e
+      @output.puts "[!] Compaction failed (#{e.message}). Old messages will be dropped if needed."
+      0
+    end
+
+    def compaction_notice(compacted)
+      compacted.positive? ? "Summarized and compacted #{compacted} earlier message(s)." : "No old history available to compact."
+    end
+
+    def warn_if_empty_or_truncated(result)
+      if result[:content].to_s.empty? && result[:tool_calls].empty?
+        @output.puts "[!] The model returned an empty response (the context may have been exceeded). " \
+                     "Reset with /clear or increase OLLAMA_NUM_CTX."
+      end
+
+      budget = @provider.context_budget_tokens
+      prompt_tokens = result.dig(:meta, :prompt_eval_count)
+      return unless budget && prompt_tokens && prompt_tokens >= budget
+
+      @output.puts "[!] The prompt is approaching the context limit (#{prompt_tokens} tokens). " \
+                   "Older messages may have been truncated."
+    end
+
     def plan_then_execute
       @output.puts "\n[Plan Mode] Generating plan..."
 
       read_only_tools = Yorishiro.configuration.read_only_tool_definitions
 
       loop do
-        @output.print "\nassistant> "
-
-        result = @provider.chat(@conversation, tools: read_only_tools) do |text|
-          @output.print text
-        end
-
-        @output.puts
-        @output.puts
+        result = request_completion(read_only_tools)
 
         content = result[:content]
         tool_calls = result[:tool_calls]
@@ -277,6 +339,8 @@ module Yorishiro
       when "/clear"
         @conversation = Conversation.new(system_prompt: Yorishiro.configuration.system_prompt_text)
         @output.puts "Conversation cleared."
+      when "/compact"
+        compact_conversation
       when "/tools"
         list_tools
       when "/skills"
@@ -320,6 +384,7 @@ module Yorishiro
         Commands:
           /plan     - Toggle plan mode
           /clear    - Clear conversation
+          /compact  - Summarize and compact conversation history
           /tools    - List available tools
           /skills   - List available skills
           /exit     - Exit yorishiro

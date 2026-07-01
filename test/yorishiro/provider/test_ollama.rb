@@ -151,6 +151,95 @@ class TestProviderOllama < Minitest::Test
     refute @provider.debug?
   end
 
+  def test_chat_sends_default_num_ctx
+    ENV.delete("OLLAMA_NUM_CTX")
+    stub_ollama_stream("Hi")
+
+    @provider.chat(@conversation)
+
+    assert_requested(:post, "http://localhost:11434/api/chat") do |req|
+      JSON.parse(req.body).dig("options", "num_ctx") == 8192
+    end
+  end
+
+  def test_chat_num_ctx_from_env
+    ENV["OLLAMA_NUM_CTX"] = "16384"
+    stub_ollama_stream("Hi")
+
+    @provider.chat(@conversation)
+
+    assert_requested(:post, "http://localhost:11434/api/chat") do |req|
+      JSON.parse(req.body).dig("options", "num_ctx") == 16_384
+    end
+  ensure
+    ENV.delete("OLLAMA_NUM_CTX")
+  end
+
+  def test_chat_num_ctx_constructor_overrides_env
+    ENV["OLLAMA_NUM_CTX"] = "16384"
+    provider = Yorishiro::Provider::Ollama.new(model: "llama3.1", num_ctx: 4096)
+    stub_ollama_stream("Hi")
+
+    provider.chat(@conversation)
+
+    assert_requested(:post, "http://localhost:11434/api/chat") do |req|
+      JSON.parse(req.body).dig("options", "num_ctx") == 4096
+    end
+  ensure
+    ENV.delete("OLLAMA_NUM_CTX")
+  end
+
+  def test_context_budget_tokens
+    ENV.delete("OLLAMA_NUM_CTX")
+    # 8192 (default) - 2048 (output reserve) = 6144
+    assert_equal 6144, @provider.context_budget_tokens
+  end
+
+  def test_context_budget_tokens_floor
+    provider = Yorishiro::Provider::Ollama.new(model: "llama3.1", num_ctx: 512)
+    # 512 - 2048 would be negative, floored at MIN_CONTEXT_BUDGET (1024)
+    assert_equal 1024, provider.context_budget_tokens
+  end
+
+  def test_parse_stream_skips_malformed_lines
+    body = "#{[
+      "this is not json",
+      JSON.generate({ message: { role: "assistant", content: "recovered" }, done: false }),
+      JSON.generate({ message: { role: "assistant", content: "" }, done: true })
+    ].join("\n")}\n"
+
+    stub_request(:post, "http://localhost:11434/api/chat")
+      .to_return(status: 200, body: body, headers: { "Content-Type" => "application/x-ndjson" })
+
+    result = @provider.chat(@conversation)
+    assert_equal "recovered", result[:content]
+  end
+
+  def test_chat_raises_on_stream_error
+    body = "#{JSON.generate({ error: "model requires more system memory" })}\n"
+
+    stub_request(:post, "http://localhost:11434/api/chat")
+      .to_return(status: 200, body: body, headers: { "Content-Type" => "application/x-ndjson" })
+
+    error = assert_raises(Yorishiro::ProviderError) { @provider.chat(@conversation) }
+    assert_includes error.message, "model requires more system memory"
+  end
+
+  def test_chat_captures_meta_stats
+    body = "#{[
+      JSON.generate({ message: { role: "assistant", content: "Hi" }, done: false }),
+      JSON.generate({ message: { role: "assistant", content: "" }, done: true, done_reason: "stop", prompt_eval_count: 42, eval_count: 7 })
+    ].join("\n")}\n"
+
+    stub_request(:post, "http://localhost:11434/api/chat")
+      .to_return(status: 200, body: body, headers: { "Content-Type" => "application/x-ndjson" })
+
+    result = @provider.chat(@conversation)
+    assert_equal 42, result[:meta][:prompt_eval_count]
+    assert_equal 7, result[:meta][:eval_count]
+    assert_equal "stop", result[:meta][:done_reason]
+  end
+
   private
 
   def stub_ollama_stream(text)
