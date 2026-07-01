@@ -41,10 +41,14 @@ module Yorishiro
         raise ProviderNotImplementedError, "#{self.class}#default_model is not implemented"
       end
 
+      def read_timeout
+        120
+      end
+
       def post_stream(uri, headers:, body:, &block)
         http = Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = (uri.scheme == "https")
-        http.read_timeout = 120
+        http.read_timeout = read_timeout
 
         request = Net::HTTP::Post.new(uri)
         headers.each { |k, v| request[k] = v }

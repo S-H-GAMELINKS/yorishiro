@@ -13,6 +13,12 @@ class TestProviderOllama < Minitest::Test
     assert_equal "llama3.1", @provider.model_name
   end
 
+  def test_read_timeout_is_unlimited
+    # Local inference (prompt eval on large inputs) can take arbitrarily long,
+    # so Ollama disables the read timeout rather than inheriting the 120s default.
+    assert_nil @provider.send(:read_timeout)
+  end
+
   def test_supported_models_from_api
     stub_request(:get, "http://localhost:11434/api/tags")
       .to_return(status: 200, body: '{"models":[{"name":"gemma3:4b"},{"name":"llama3.2:3b"}]}')

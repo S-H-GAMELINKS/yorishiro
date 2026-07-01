@@ -36,13 +36,21 @@ module Yorishiro
 
         body[:tools] = format_tools(tools) unless tools.empty?
 
-        post_stream(uri, headers: headers, body: body, &block)
+        debug_log("Ollama request", body)
+
+        result = post_stream(uri, headers: headers, body: body, &block)
+        debug_log("Ollama response", result)
+        result
       end
 
       private
 
       def default_model
         "llama3.1"
+      end
+
+      def read_timeout
+        nil # local inference (prompt eval on large inputs) can take arbitrarily long
       end
 
       def format_messages(api_messages)
@@ -78,39 +86,6 @@ module Yorishiro
             }
           }
         end
-      end
-
-      def post_no_stream(uri, headers:, body:, &block)
-        http = Net::HTTP.new(uri.host, uri.port)
-        http.use_ssl = (uri.scheme == "https")
-        http.read_timeout = 120
-
-        request = Net::HTTP::Post.new(uri)
-        headers.each { |k, v| request[k] = v }
-        request.body = JSON.generate(body)
-
-        debug_log("Ollama request", body)
-
-        response = http.request(request)
-        handle_error_response!(response) unless response.is_a?(Net::HTTPSuccess)
-
-        data = JSON.parse(response.body)
-        debug_log("Ollama response", data)
-        message = data["message"] || {}
-
-        content = message["content"] || ""
-        block&.call(content) unless content.empty?
-
-        tool_calls = (message["tool_calls"] || []).map do |tc|
-          func = tc["function"]
-          {
-            id: "ollama_#{SecureRandom.hex(8)}",
-            name: func["name"],
-            arguments: func["arguments"].is_a?(Hash) ? func["arguments"] : JSON.parse(func["arguments"].to_s)
-          }
-        end
-
-        { content: content, tool_calls: tool_calls }
       end
 
       def parse_stream(response, tool_calls:, &block)
