@@ -207,6 +207,24 @@ skill GitStatusSkill.new
 # => /git_status で利用可能
 ```
 
+文字列を返すスキルはその出力を表示するだけです。代わりに `prompt(...)` を返すと、
+そのテキストがユーザメッセージとしてLLMに注入され（Planモードも尊重して）実行されます。
+スキルからアシスタントにタスクを渡せます。
+
+```ruby
+class ReviewSkill < Yorishiro::Skill
+  def name = "review"
+  def description = "現在の git diff をレビュー"
+
+  def execute(_context)
+    prompt("あなたはコードレビュアーです。次のdiffをレビューして問題点を挙げてください:\n#{`git diff`}")
+  end
+end
+
+skill ReviewSkill.new
+# => /review で diff がLLMに渡り、エージェントループが実行される
+```
+
 ### 設定例（フル）
 
 ```ruby

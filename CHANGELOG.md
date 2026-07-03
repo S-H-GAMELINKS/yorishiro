@@ -1,5 +1,6 @@
 ## [Unreleased]
 
+- Let skills inject a prompt into the LLM: when a skill's `execute` returns a `Yorishiro::Skill::Prompt` (built with the `prompt("...")` helper), its text is fed to the model as a user message and the agent/plan loop runs. Skills returning a String keep printing their output as before.
 - Stream Ollama responses even when tools are provided, allowing text and tool calls to be handled from NDJSON chunks.
 - Add `OLLAMA_KEEP_ALIVE` support for Ollama chat requests, defaulting to `10m`.
 - Disable the read timeout for Ollama so large-prompt coding tasks no longer fail with `Net::ReadTimeout` while the local model evaluates the prompt before streaming the first token. Cloud providers keep the 120s default.

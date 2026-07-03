@@ -81,6 +81,7 @@ allow_tool Yorishiro::Tools::ExecuteCommand.new,
 # Custom Skills (Slash Commands)
 # ============================================================
 
+# A skill that returns a String just prints its output:
 # class GitStatusSkill < Yorishiro::Skill
 #   def name = "git_status"
 #   def description = "Show git status"
@@ -88,3 +89,16 @@ allow_tool Yorishiro::Tools::ExecuteCommand.new,
 # end
 #
 # skill GitStatusSkill.new
+
+# A skill can instead inject its own prompt into the LLM by returning
+# `prompt(...)`. The text is sent to the model as a user message and the
+# agent (or plan) loop runs, so the skill can drive the assistant:
+# class ReviewSkill < Yorishiro::Skill
+#   def name = "review"
+#   def description = "Review the current git diff"
+#   def execute(_context)
+#     prompt("You are a code reviewer. Review this diff and list issues:\n#{`git diff`}")
+#   end
+# end
+#
+# skill ReviewSkill.new

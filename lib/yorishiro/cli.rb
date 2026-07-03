@@ -354,7 +354,12 @@ module Yorishiro
         skill = Yorishiro.configuration.skills.find { |s| "/#{s.name}" == command }
         if skill
           result = skill.execute({ conversation: @conversation, args: args })
-          @output.puts result if result
+          case result
+          when Yorishiro::Skill::Prompt
+            process_user_input(result.text) # inject prompt -> plan/agent loop
+          when String
+            @output.puts result
+          end
         else
           @output.puts "Unknown command: #{command}. Type /help for available commands."
         end

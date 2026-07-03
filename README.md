@@ -206,6 +206,24 @@ skill GitStatusSkill.new
 # => Available as /git_status
 ```
 
+A skill that returns a String just prints its output. To drive the assistant
+instead, return `prompt(...)`: the text is injected as a user message and the
+LLM runs (respecting plan mode), so the skill can hand a task to the model.
+
+```ruby
+class ReviewSkill < Yorishiro::Skill
+  def name = "review"
+  def description = "Review the current git diff"
+
+  def execute(_context)
+    prompt("You are a code reviewer. Review this diff and list issues:\n#{`git diff`}")
+  end
+end
+
+skill ReviewSkill.new
+# => /review feeds the diff to the LLM and runs the agent loop
+```
+
 ### Full Configuration Example
 
 ```ruby

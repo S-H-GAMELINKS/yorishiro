@@ -35,6 +35,18 @@ class TestCLI < Minitest::Test
     def default_model = "x"
   end
 
+  class PrintingSkill < Yorishiro::Skill
+    def name = "hello"
+    def description = "print hello"
+    def execute(_context) = "printed output"
+  end
+
+  class PromptSkill < Yorishiro::Skill
+    def name = "review"
+    def description = "review via LLM"
+    def execute(_context) = prompt("please review")
+  end
+
   def setup
     @output = StringIO.new
     @cli = Yorishiro::CLI.new
@@ -215,6 +227,36 @@ class TestCLI < Minitest::Test
 
     assert_includes @output.string, "[Error]"
     assert_includes @output.string, "boom"
+  end
+
+  def test_skill_returning_string_prints_output
+    Yorishiro.reset!
+    Yorishiro.configuration.skill(PrintingSkill.new)
+    @cli.instance_variable_set(:@conversation, Yorishiro::Conversation.new)
+
+    @cli.send(:handle_slash_command, "/hello")
+
+    assert_includes @output.string, "printed output"
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_skill_returning_prompt_runs_agent_loop
+    Yorishiro.reset!
+    Yorishiro.configuration.skill(PromptSkill.new)
+    conv = Yorishiro::Conversation.new
+    provider = FakeProvider.new(budget: nil)
+    @cli.instance_variable_set(:@conversation, conv)
+    @cli.instance_variable_set(:@provider, provider)
+    @cli.instance_variable_set(:@plan_mode, false)
+
+    @cli.send(:handle_slash_command, "/review")
+
+    assert_equal 1, provider.chat_calls # prompt was injected and the LLM ran
+    assert_equal "please review", conv.messages.first[:content]
+    assert_equal :user, conv.messages.first[:role]
+  ensure
+    Yorishiro.reset!
   end
 
   private
