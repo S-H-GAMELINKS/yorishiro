@@ -61,7 +61,21 @@ assistant> Hi! How can I help you today?
 ### Basic Operations
 
 - Type your message and press **Enter twice** to send
+- Input is a single editable buffer: use the arrow keys to move back to earlier lines and edit them before sending
+- Press **↑ / ↓** to recall previously sent prompts
 - `Ctrl+C` or `/exit` to quit
+
+### Input History
+
+Sent prompts are saved to `.yorishiro/history.json` in the directory where you launched `yorishiro`, so each project keeps its own history. On the next launch from the same directory, press **↑** to recall past prompts (multi-line prompts are restored intact) and re-send them.
+
+Add `.yorishiro/` to your `.gitignore` to keep the history out of version control:
+
+```
+.yorishiro/
+```
+
+If several sessions run in the same directory at once, the last one to exit wins when writing the file.
 
 ### Slash Commands
 

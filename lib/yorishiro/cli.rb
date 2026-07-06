@@ -21,6 +21,7 @@ module Yorishiro
       print_welcome
       repl_loop
     ensure
+      @input_history&.save
       @mcp_manager&.stop_all
     end
 
@@ -72,6 +73,9 @@ module Yorishiro
         configuration: config
       )
       @mcp_manager.start_all
+
+      @input_history = InputHistory.new
+      @input_history.load
     end
 
     def print_welcome
@@ -104,28 +108,22 @@ module Yorishiro
       @output.puts "\nGoodbye!"
     end
 
+    # Read a (possibly multi-line) message in a single editable buffer so the
+    # user can move the cursor back to earlier lines and edit them. Submitting
+    # follows the existing "Enter on a blank line sends" gesture. Returns nil on
+    # EOF (Ctrl-D) to terminate the REPL.
     def read_input
-      lines = []
-      empty_count = 0
-      prompt = "you> "
-
-      loop do
-        line = Reline.readline(prompt, true)
-        return nil if line.nil?
-
-        if line.empty?
-          empty_count += 1
-          break if empty_count >= 1 && !lines.empty?
-
-          lines << "" unless lines.empty?
-        else
-          empty_count = 0
-          lines << line
-        end
-        prompt = "  .. "
+      buffer = Reline.readmultiline("you> ", true) do |input|
+        # Reline appends the just-pressed newline before calling this block, so
+        # a trailing blank line (Enter on an empty line) shows up as a double
+        # newline. Submit then, provided some non-empty content was entered —
+        # the existing "Enter on a blank line sends" gesture.
+        !input.strip.empty? && input.end_with?("\n\n")
       end
+      return nil if buffer.nil?
 
-      lines.join("\n")
+      @input_history.save
+      buffer.strip
     end
 
     def process_user_input(input)

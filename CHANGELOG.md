@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+- Persist input history to `.yorishiro/history.json` in the directory where `yorishiro` was launched, so past prompts (including multi-line ones) can be recalled with the up arrow across sessions. Each project keeps its own history; add `.yorishiro/` to `.gitignore` to keep it out of version control.
+- Edit multi-line prompts as a single buffer: input now uses `Reline.readmultiline`, so the cursor can move back to earlier lines to edit them before sending. The "Enter on a blank line sends" gesture is unchanged.
 - Let skills inject a prompt into the LLM: when a skill's `execute` returns a `Yorishiro::Skill::Prompt` (built with the `prompt("...")` helper), its text is fed to the model as a user message and the agent/plan loop runs. Skills returning a String keep printing their output as before.
 - Stream Ollama responses even when tools are provided, allowing text and tool calls to be handled from NDJSON chunks.
 - Add `OLLAMA_KEEP_ALIVE` support for Ollama chat requests, defaulting to `10m`.
