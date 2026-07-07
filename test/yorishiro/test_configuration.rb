@@ -157,6 +157,66 @@ class TestConfiguration < Minitest::Test
     refute_includes names, "execute_command"
   end
 
+  def test_replace_skill_overrides_same_name
+    first = Class.new(Yorishiro::Skill) do
+      def name = "dup_name"
+      def description = "first"
+      def execute(_context) = "first"
+    end.new
+    second = Class.new(Yorishiro::Skill) do
+      def name = "dup_name"
+      def description = "second"
+      def execute(_context) = "second"
+    end.new
+
+    @config.skill(first)
+    @config.replace_skill(second)
+
+    dups = @config.skills.select { |s| s.name == "dup_name" }
+    assert_equal 1, dups.length
+    assert_equal "second", dups.first.execute({})
+  end
+
+  def test_load_reads_skill_directories_local_overrides_global
+    Dir.mktmpdir do |dir|
+      rc_path = File.join(dir, ".yorishirorc")
+      File.write(rc_path, "use provider: :ollama\n")
+
+      global_skills = File.join(dir, "global_skills")
+      local_skills = File.join(dir, "local_skills")
+      FileUtils.mkdir_p(global_skills)
+      FileUtils.mkdir_p(local_skills)
+      File.write(File.join(global_skills, "dup.rb"), <<~RUBY)
+        class ConfigGlobalDupSkill < Yorishiro::Skill
+          def name = "config_dup"
+          def description = "global"
+          def execute(_context) = "from global"
+        end
+      RUBY
+      File.write(File.join(local_skills, "dup.rb"), <<~RUBY)
+        class ConfigLocalDupSkill < Yorishiro::Skill
+          def name = "config_dup"
+          def description = "local"
+          def execute(_context) = "from local"
+        end
+      RUBY
+
+      @config.stub(:global_rc_path, rc_path) do
+        @config.stub(:local_rc_path, "/nonexistent") do
+          @config.stub(:global_skills_dir, global_skills) do
+            @config.stub(:local_skills_dir, local_skills) do
+              @config.load!
+            end
+          end
+        end
+      end
+
+      dups = @config.skills.select { |s| s.name == "config_dup" }
+      assert_equal 1, dups.length
+      assert_equal "from local", dups.first.execute({})
+    end
+  end
+
   def test_load_rc_file
     Dir.mktmpdir do |dir|
       rc_path = File.join(dir, ".yorishirorc")
@@ -166,7 +226,7 @@ class TestConfiguration < Minitest::Test
 
       @config.stub(:global_rc_path, rc_path) do
         @config.stub(:local_rc_path, "/nonexistent") do
-          @config.load!
+          stub_skills_dirs { @config.load! }
         end
       end
 
@@ -189,11 +249,20 @@ class TestConfiguration < Minitest::Test
 
       @config.stub(:global_rc_path, global_rc) do
         @config.stub(:local_rc_path, local_rc) do
-          @config.load!
+          stub_skills_dirs { @config.load! }
         end
       end
 
       assert_equal "local-key", @config.api_key
+    end
+  end
+
+  private
+
+  # Keep load! away from the real ~/.yorishiro/skills and ./.yorishiro/skills.
+  def stub_skills_dirs(&block)
+    @config.stub(:global_skills_dir, "/nonexistent") do
+      @config.stub(:local_skills_dir, "/nonexistent", &block)
     end
   end
 end
