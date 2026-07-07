@@ -41,4 +41,32 @@ class TestWriteFile < Minitest::Test
       assert_equal "new content", File.read(path)
     end
   end
+
+  def test_preview_new_file_all_additions
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "new.txt")
+
+      preview = @tool.preview(path: path, content: "line 1\nline 2\n")
+
+      assert_includes preview, "--- /dev/null"
+      assert_includes preview, "+line 1"
+      assert_includes preview, "+line 2"
+    end
+  end
+
+  def test_preview_existing_file_shows_diff
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "output.txt")
+      File.write(path, "old line\n")
+
+      preview = @tool.preview(path: path, content: "new line\n")
+
+      assert_includes preview, "-old line"
+      assert_includes preview, "+new line"
+    end
+  end
+
+  def test_preview_returns_nil_without_content
+    assert_nil @tool.preview(path: "a.txt")
+  end
 end

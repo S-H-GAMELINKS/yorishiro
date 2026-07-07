@@ -10,6 +10,14 @@ class TestCLI < Minitest::Test
     def parameters = { type: "object" }
   end
 
+  class PreviewTool < FakeTool
+    def preview(_arguments) = "@@ -1,1 +1,1 @@\n-old line\n+new line"
+  end
+
+  class RaisingPreviewTool < FakeTool
+    def preview(_arguments) = raise "preview boom"
+  end
+
   class FakeProvider
     attr_accessor :budget
     attr_reader :chat_calls
@@ -115,6 +123,36 @@ class TestCLI < Minitest::Test
     assert_includes output, "  content:"
     assert_includes output, "x" * 500
     assert_includes output, "..."
+  end
+
+  def test_ask_permission_shows_preview_instead_of_arguments
+    tool = PreviewTool.new
+    tool_call = { arguments: { "path" => "test.rb", "content" => "new line\n" } }
+
+    simulate_input("y") do
+      result = @cli.send(:ask_permission, tool, tool_call)
+      assert_equal :allowed, result
+    end
+
+    output = @output.string
+    assert_includes output, "-old line"
+    assert_includes output, "+new line"
+    refute_includes output, "  path: test.rb" # argument dump replaced by the preview
+    refute_includes output, "\e[" # StringIO is not a tty, so no ANSI colors
+  end
+
+  def test_ask_permission_falls_back_when_preview_raises
+    tool = RaisingPreviewTool.new
+    tool_call = { arguments: { "path" => "test.rb" } }
+
+    simulate_input("y") do
+      result = @cli.send(:ask_permission, tool, tool_call)
+      assert_equal :allowed, result
+    end
+
+    output = @output.string
+    assert_includes output, "  path: test.rb"
+    refute_includes output, "preview boom"
   end
 
   def test_ask_permission_deny

@@ -36,6 +36,15 @@ module Yorishiro
       def permission_check(_arguments)
         :ask
       end
+
+      def preview(arguments)
+        path = arguments[:path] || arguments["path"]
+        content = arguments[:content] || arguments["content"]
+        return nil unless path && content
+
+        old_content = File.file?(path) ? File.read(path) : ""
+        Diff.unified(old_content, content, path: path)
+      end
     end
   end
 end
