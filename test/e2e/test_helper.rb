@@ -132,10 +132,11 @@ module Yorishiro
       def input(text)
         @conversation.add_message(:user, text)
 
-        read_only_tools = @config.read_only_tool_definitions
+        exit_tool = Yorishiro::Tools::ExitPlanMode.new
+        plan_tools = @config.read_only_tool_definitions + [exit_tool.definition]
 
         loop do
-          result = @provider.chat(@conversation, tools: read_only_tools)
+          result = @provider.chat(@conversation, tools: plan_tools)
           content = result[:content]
           tool_calls = result[:tool_calls]
 
@@ -143,6 +144,12 @@ module Yorishiro
           @conversation.add_message(:assistant, content, tool_calls: tool_calls.empty? ? nil : tool_calls)
 
           break if tool_calls.empty?
+
+          exit_call = tool_calls.find { |tc| tc[:name] == exit_tool.name }
+          if exit_call
+            @conversation.add_tool_result(tool_call_id: exit_call[:id], content: "Plan presented to the user for approval.")
+            break
+          end
 
           tool_calls.each do |tc|
             tool = @config.find_tool(tc[:name])
