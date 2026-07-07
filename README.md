@@ -77,12 +77,25 @@ Add `.yorishiro/` to your `.gitignore` to keep the history out of version contro
 
 If several sessions run in the same directory at once, the last one to exit wins when writing the file.
 
+### Session Persistence & Resume
+
+Conversations are saved automatically to `.yorishiro/sessions/` under the launch directory — after every turn, and progressively during long tool loops, so a crash loses at most the in-flight completion. Resume where you left off:
+
+```bash
+yorishiro --continue        # resume the most recent session
+yorishiro --resume          # pick from a list of saved sessions
+yorishiro --resume 2026070  # resume by id (prefixes work)
+```
+
+Inside the REPL, `/resume` shows the same picker and `/clear` starts a new session (the old one stays on disk and remains resumable). Sessions record which provider/model they were created with; resuming under a different one prints a notice and continues with the current configuration. The newest 50 sessions are kept per directory.
+
 ### Slash Commands
 
 | Command | Description |
 |---------|-------------|
 | `/plan` | Toggle plan mode |
-| `/clear` | Clear conversation history |
+| `/clear` | Clear conversation history (starts a new session) |
+| `/resume` | List saved sessions and resume one |
 | `/tools` | List registered tools |
 | `/skills` | List registered skills |
 | `/exit` | Exit yorishiro |
@@ -94,6 +107,8 @@ If several sessions run in the same directory at once, the last one to exit wins
 yorishiro --provider anthropic   # Select provider
 yorishiro --model gpt-4o         # Override model
 yorishiro --plan                 # Start in plan mode
+yorishiro --continue             # Resume the most recent session
+yorishiro --resume [ID]          # Resume a saved session (picker when ID is omitted)
 yorishiro --version              # Show version
 yorishiro --help                 # Show help
 ```

@@ -21,6 +21,10 @@ Metrics/MethodLength:
 
 Metrics/ClassLength:
   Max: 330
+  Exclude:
+    # The CLI is the REPL orchestrator; its size grows with every
+    # user-facing feature (plan mode, sessions, slash commands, ...).
+    - lib/yorishiro/cli.rb
 
 Metrics/AbcSize:
   Max: 50

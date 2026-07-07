@@ -45,6 +45,14 @@ module Yorishiro
           @cli_opts[:plan_mode] = true
         end
 
+        opts.on("--continue", "Resume the most recent session") do
+          @cli_opts[:continue] = true
+        end
+
+        opts.on("--resume [ID]", "Resume a saved session (interactive picker when ID is omitted)") do |v|
+          @cli_opts[:resume] = v || :pick
+        end
+
         opts.on("--version", "Show version") do
           @output.puts "yorishiro #{Yorishiro::VERSION}"
           exit
@@ -76,6 +84,10 @@ module Yorishiro
 
       @input_history = InputHistory.new
       @input_history.load
+
+      @session_store = SessionStore.new
+      @session_id = nil
+      resume_from_options!
     end
 
     def print_welcome
@@ -134,6 +146,10 @@ module Yorishiro
       else
         agent_loop
       end
+    ensure
+      # Save even when the turn raised, so a crash loses at most the
+      # in-flight completion.
+      persist_session
     end
 
     def agent_loop
@@ -150,6 +166,7 @@ module Yorishiro
         break if tool_calls.empty?
 
         execute_tool_calls(tool_calls)
+        persist_session # long tool loops save progressively
       end
     end
 
@@ -254,6 +271,8 @@ module Yorishiro
             @conversation.add_tool_result(tool_call_id: tc[:id], content: error_msg)
           end
         end
+
+        persist_session # long tool loops save progressively
       end
 
       answer = Reline.readline("Execute this plan? [y/n]: ", false)
@@ -327,6 +346,42 @@ module Yorishiro
       end
     end
 
+    def resume_from_options!
+      resumed_id = if @cli_opts[:continue]
+                     session_resume.continue_latest
+                   elsif @cli_opts[:resume] == :pick
+                     session_resume.pick
+                   elsif @cli_opts[:resume]
+                     session_resume.resume_by_id(@cli_opts[:resume])
+                   end
+      @session_id = resumed_id if resumed_id
+    end
+
+    def choose_and_resume_session
+      resumed_id = session_resume.pick
+      @session_id = resumed_id if resumed_id
+    end
+
+    def session_resume
+      SessionResume.new(
+        store: @session_store,
+        conversation: @conversation,
+        output: @output,
+        current_target: "#{Yorishiro.configuration.provider_name}:#{@provider.model_name}"
+      )
+    end
+
+    def persist_session
+      return if @session_store.nil? || @conversation.nil? || @conversation.messages.empty?
+
+      @session_id = @session_store.save(
+        id: @session_id,
+        messages: @conversation.serializable_messages,
+        provider: Yorishiro.configuration.provider_name,
+        model: @provider.model_name
+      ) || @session_id
+    end
+
     def handle_slash_command(input)
       command, *args = input.split(/\s+/)
 
@@ -335,10 +390,11 @@ module Yorishiro
         @plan_mode = !@plan_mode
         @output.puts "Plan mode: #{@plan_mode ? "ON" : "OFF"}"
       when "/clear"
-        @conversation = Conversation.new(system_prompt: Yorishiro.configuration.system_prompt_text)
-        @output.puts "Conversation cleared."
+        clear_conversation!
       when "/compact"
         compact_conversation
+      when "/resume"
+        choose_and_resume_session
       when "/tools"
         list_tools
       when "/skills"
@@ -362,6 +418,12 @@ module Yorishiro
           @output.puts "Unknown command: #{command}. Type /help for available commands."
         end
       end
+    end
+
+    def clear_conversation!
+      @conversation = Conversation.new(system_prompt: Yorishiro.configuration.system_prompt_text)
+      @session_id = nil # the old session file stays on disk for /resume
+      @output.puts "Conversation cleared. Started a new session."
     end
 
     def list_tools
@@ -388,6 +450,7 @@ module Yorishiro
           /plan     - Toggle plan mode
           /clear    - Clear conversation
           /compact  - Summarize and compact conversation history
+          /resume   - List and resume a saved session
           /tools    - List available tools
           /skills   - List available skills
           /exit     - Exit yorishiro

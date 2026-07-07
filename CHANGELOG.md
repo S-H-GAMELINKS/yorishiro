@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+- Persist conversations to `.yorishiro/sessions/<id>.json` under the launch directory (saved after every turn and progressively during long tool loops, via an atomic tmp-file rename so a crash never corrupts the previous state). Resume with `--continue` (most recent session), `--resume [ID]` (ID prefixes work; interactive picker when omitted), or the `/resume` command. `/clear` starts a new session while keeping the old file resumable. Sessions record the provider/model and warn when resuming under a different one; the newest 50 sessions are kept.
+
 - Persist input history to `.yorishiro/history.json` in the directory where `yorishiro` was launched, so past prompts (including multi-line ones) can be recalled with the up arrow across sessions. Each project keeps its own history; add `.yorishiro/` to `.gitignore` to keep it out of version control.
 - Edit multi-line prompts as a single buffer: input now uses `Reline.readmultiline`, so the cursor can move back to earlier lines to edit them before sending. The "Enter on a blank line sends" gesture is unchanged.
 - Let skills inject a prompt into the LLM: when a skill's `execute` returns a `Yorishiro::Skill::Prompt` (built with the `prompt("...")` helper), its text is fed to the model as a user message and the agent/plan loop runs. Skills returning a String keep printing their output as before.

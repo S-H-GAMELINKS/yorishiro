@@ -63,12 +63,17 @@ assistant> Hi! How can I help you today?
 - メッセージを入力し、**Enterを2回**押して送信
 - `Ctrl+C` または `/exit` で終了
 
+### セッションの永続化と再開
+
+会話は起動ディレクトリ配下の `.yorishiro/sessions/` に自動保存されます（毎ターン後と、長いツールループの途中でも逐次保存）。`yorishiro --continue`（直近）、`yorishiro --resume [ID]`（IDは前方一致可、省略時は選択画面）、または REPL 内の `/resume` で再開できます。`/clear` は新しいセッションを開始しますが、以前のセッションはディスクに残り再開可能です。セッションには作成時のプロバイダ/モデルが記録され、異なる構成で再開すると通知した上で現在の設定で続行します。ディレクトリごとに新しい50セッションが保持されます。
+
 ### スラッシュコマンド
 
 | コマンド | 説明 |
 |---------|------|
 | `/plan` | Planモードの切り替え |
-| `/clear` | 会話履歴をクリア |
+| `/clear` | 会話履歴をクリア（新しいセッションを開始） |
+| `/resume` | 保存済みセッションの一覧から再開 |
 | `/tools` | 登録済みツール一覧 |
 | `/skills` | 登録済みスキル一覧 |
 | `/exit` | 終了 |
@@ -80,6 +85,8 @@ assistant> Hi! How can I help you today?
 yorishiro --provider anthropic   # プロバイダ指定
 yorishiro --model gpt-4o         # モデル指定
 yorishiro --plan                 # Planモードで起動
+yorishiro --continue             # 直近のセッションを再開
+yorishiro --resume [ID]          # 保存済みセッションを再開（ID省略時は選択画面）
 yorishiro --version              # バージョン表示
 yorishiro --help                 # ヘルプ表示
 ```

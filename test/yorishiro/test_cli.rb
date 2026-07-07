@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "tmpdir"
 
 class TestCLI < Minitest::Test
   class FakeTool < Yorishiro::Tool
@@ -19,6 +20,8 @@ class TestCLI < Minitest::Test
     end
 
     def context_budget_tokens = @budget
+
+    def model_name = "fake-model"
 
     def chat(_conversation, tools: [], &) # rubocop:disable Lint/UnusedMethodArgument
       @chat_calls += 1
@@ -229,6 +232,117 @@ class TestCLI < Minitest::Test
     assert_includes @output.string, "boom"
   end
 
+  def test_process_user_input_persists_session
+    Yorishiro.reset!
+    Dir.mktmpdir do |dir|
+      store = Yorishiro::SessionStore.new(dir: dir)
+      setup_session_cli(store)
+
+      @cli.send(:process_user_input, "hello world")
+
+      session = store.latest
+      refute_nil session
+      assert_equal "hello world", session[:title]
+      assert_equal "fake-model", session[:model]
+      assert_equal 2, session[:messages].length # user + assistant reply
+    end
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_persist_session_skips_empty_conversation
+    Yorishiro.reset!
+    Dir.mktmpdir do |dir|
+      store = Yorishiro::SessionStore.new(dir: dir)
+      setup_session_cli(store)
+
+      @cli.send(:persist_session)
+
+      assert_nil store.latest
+    end
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_clear_starts_a_new_session_file
+    Yorishiro.reset!
+    Dir.mktmpdir do |dir|
+      store = Yorishiro::SessionStore.new(dir: dir)
+      setup_session_cli(store)
+
+      @cli.send(:process_user_input, "first session")
+      @cli.send(:handle_slash_command, "/clear")
+      @cli.send(:process_user_input, "second session")
+
+      assert_equal 2, store.list.length
+      assert_includes @output.string, "Started a new session"
+    end
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_resume_slash_command_restores_conversation
+    Yorishiro.reset!
+    Dir.mktmpdir do |dir|
+      store = Yorishiro::SessionStore.new(dir: dir)
+      saved_id = store.save(
+        id: nil,
+        messages: [{ "role" => "user", "content" => "remember me" }, { "role" => "assistant", "content" => "noted" }],
+        provider: :ollama,
+        model: "gemma4:12b"
+      )
+      setup_session_cli(store)
+
+      simulate_input("1") do
+        @cli.send(:handle_slash_command, "/resume")
+      end
+
+      conv = @cli.instance_variable_get(:@conversation)
+      assert_equal 2, conv.length
+      assert_equal "remember me", conv.messages.first[:content]
+      assert_equal saved_id, @cli.instance_variable_get(:@session_id)
+      assert_includes @output.string, "Resumed session #{saved_id}"
+      assert_includes @output.string, "recorded with ollama:gemma4:12b" # model mismatch notice
+    end
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_resume_picker_cancels_on_invalid_choice
+    Yorishiro.reset!
+    Dir.mktmpdir do |dir|
+      store = Yorishiro::SessionStore.new(dir: dir)
+      store.save(id: nil, messages: [{ "role" => "user", "content" => "hi" }], provider: :ollama, model: "m")
+      setup_session_cli(store)
+
+      simulate_input("") do
+        @cli.send(:handle_slash_command, "/resume")
+      end
+
+      assert_equal 0, @cli.instance_variable_get(:@conversation).length
+      assert_includes @output.string, "Cancelled."
+    end
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_persist_session_runs_even_when_provider_raises
+    Yorishiro.reset!
+    Dir.mktmpdir do |dir|
+      store = Yorishiro::SessionStore.new(dir: dir)
+      setup_session_cli(store)
+      @cli.instance_variable_set(:@provider, RaisingProvider.new(api_key: "x"))
+
+      assert_raises(Yorishiro::ProviderError) { @cli.send(:process_user_input, "will fail") }
+
+      session = store.latest
+      refute_nil session # the user message survived the crash via ensure
+      assert_equal "will fail", session[:title]
+    end
+  ensure
+    Yorishiro.reset!
+  end
+
   def test_skill_returning_string_prints_output
     Yorishiro.reset!
     Yorishiro.configuration.skill(PrintingSkill.new)
@@ -260,6 +374,14 @@ class TestCLI < Minitest::Test
   end
 
   private
+
+  def setup_session_cli(store)
+    @cli.instance_variable_set(:@conversation, Yorishiro::Conversation.new)
+    @cli.instance_variable_set(:@provider, FakeProvider.new(budget: nil))
+    @cli.instance_variable_set(:@plan_mode, false)
+    @cli.instance_variable_set(:@session_store, store)
+    @cli.instance_variable_set(:@session_id, nil)
+  end
 
   def simulate_input(text)
     old_stdin = $stdin
