@@ -32,6 +32,7 @@ use provider: :anthropic, api_key: ENV["ANTHROPIC_API_KEY"], model: "claude-sonn
 
 allow_tool Yorishiro::Tools::ReadFile.new
 allow_tool Yorishiro::Tools::WriteFile.new
+allow_tool Yorishiro::Tools::EditFile.new
 allow_tool Yorishiro::Tools::ListFiles.new
 allow_tool Yorishiro::Tools::Grep.new
 allow_tool Yorishiro::Tools::ExecuteCommand.new,
@@ -127,8 +128,9 @@ allow_tool Yorishiro::Tools::ReadFile.new
 allow_tool Yorishiro::Tools::ListFiles.new
 allow_tool Yorishiro::Tools::Grep.new
 
-# Write tool (permission required every time)
+# Write / edit tools (permission required every time, with a diff preview)
 allow_tool Yorishiro::Tools::WriteFile.new
+allow_tool Yorishiro::Tools::EditFile.new
 
 # Command execution (pattern-based permission)
 allow_tool Yorishiro::Tools::ExecuteCommand.new,
@@ -250,6 +252,7 @@ plan_mode false
 # Built-in tools
 allow_tool Yorishiro::Tools::ReadFile.new
 allow_tool Yorishiro::Tools::WriteFile.new
+allow_tool Yorishiro::Tools::EditFile.new
 allow_tool Yorishiro::Tools::ListFiles.new
 allow_tool Yorishiro::Tools::Grep.new
 allow_tool Yorishiro::Tools::ExecuteCommand.new,
@@ -273,6 +276,7 @@ mcp_server "filesystem",
 |------|-------|-------------|------------|
 | `read_file` | `Yorishiro::Tools::ReadFile` | Read file contents | Not required |
 | `write_file` | `Yorishiro::Tools::WriteFile` | Write to a file | Required every time |
+| `edit_file` | `Yorishiro::Tools::EditFile` | Replace an exact string in a file | Required every time |
 | `list_files` | `Yorishiro::Tools::ListFiles` | List directory / glob search | Not required |
 | `grep` | `Yorishiro::Tools::Grep` | Search file contents with a Ruby regexp | Not required |
 | `execute_command` | `Yorishiro::Tools::ExecuteCommand` | Execute shell commands | Pattern-based |

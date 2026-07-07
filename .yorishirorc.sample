@@ -47,6 +47,9 @@ allow_tool Yorishiro::Tools::ReadFile.new
 # File writing (permission required every time)
 allow_tool Yorishiro::Tools::WriteFile.new
 
+# Partial file editing with diff preview (permission required every time)
+allow_tool Yorishiro::Tools::EditFile.new
+
 # File listing / glob (no permission required)
 allow_tool Yorishiro::Tools::ListFiles.new
 

@@ -346,16 +346,10 @@ module Yorishiro
     def ask_permission(tool, tool_call)
       @output.puts
       @output.puts "[Permission] #{tool.name}"
-      tool_call[:arguments]&.each do |key, value|
-        str = value.to_s
-        if str.length > 80 || str.include?("\n")
-          @output.puts "  #{key}:"
-          preview = truncate(str, 500)
-          preview.each_line { |line| @output.puts "    #{line}" }
-        else
-          @output.puts "  #{key}: #{str}"
-        end
-      end
+
+      preview = tool_preview(tool, tool_call[:arguments])
+      preview ? @output.puts(preview) : print_arguments(tool_call[:arguments])
+
       answer = Reline.readline("[y] Allow once  [a] Always allow  [n] Deny: ", false)&.strip&.downcase
 
       case answer
@@ -403,6 +397,32 @@ module Yorishiro
         provider: Yorishiro.configuration.provider_name,
         model: @provider.model_name
       ) || @session_id
+    end
+
+    # A failing preview must never break the permission flow — fall back
+    # to the plain argument dump. Colors only when the output is a TTY.
+    def tool_preview(tool, arguments)
+      return nil unless arguments
+
+      preview = tool.preview(arguments)
+      return nil unless preview
+
+      @output.respond_to?(:tty?) && @output.tty? ? Diff.colorize(preview) : preview
+    rescue StandardError
+      nil
+    end
+
+    def print_arguments(arguments)
+      arguments&.each do |key, value|
+        str = value.to_s
+        if str.length > 80 || str.include?("\n")
+          @output.puts "  #{key}:"
+          preview = truncate(str, 500)
+          preview.each_line { |line| @output.puts "    #{line}" }
+        else
+          @output.puts "  #{key}: #{str}"
+        end
+      end
     end
 
     def handle_slash_command(input)

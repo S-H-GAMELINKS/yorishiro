@@ -37,5 +37,12 @@ module Yorishiro
     def configure(_options)
       # Override in subclasses to handle allow_tool options
     end
+
+    # Return a human-readable preview of what execute would do (e.g. a
+    # diff), shown in the permission prompt instead of the raw argument
+    # dump. Return nil to keep the default argument dump.
+    def preview(_arguments)
+      nil
+    end
   end
 end
