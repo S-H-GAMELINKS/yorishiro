@@ -50,6 +50,9 @@ allow_tool Yorishiro::Tools::WriteFile.new
 # File listing / glob (no permission required)
 allow_tool Yorishiro::Tools::ListFiles.new
 
+# File content search with a Ruby regexp (no permission required)
+allow_tool Yorishiro::Tools::Grep.new
+
 # Command execution (pattern-based permission)
 # Commands matching allow_commands patterns run automatically.
 # Other commands prompt for permission: [y] once, [a] always, [n] deny.

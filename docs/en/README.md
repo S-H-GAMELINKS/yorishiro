@@ -33,6 +33,7 @@ use provider: :anthropic, api_key: ENV["ANTHROPIC_API_KEY"], model: "claude-sonn
 allow_tool Yorishiro::Tools::ReadFile.new
 allow_tool Yorishiro::Tools::WriteFile.new
 allow_tool Yorishiro::Tools::ListFiles.new
+allow_tool Yorishiro::Tools::Grep.new
 allow_tool Yorishiro::Tools::ExecuteCommand.new,
   allow_commands: ["ls", "git *", "bundle exec *", "cat *"]
 
@@ -124,6 +125,7 @@ use provider: :ollama, model: "llama3.1"
 # Read-only tools (no permission required)
 allow_tool Yorishiro::Tools::ReadFile.new
 allow_tool Yorishiro::Tools::ListFiles.new
+allow_tool Yorishiro::Tools::Grep.new
 
 # Write tool (permission required every time)
 allow_tool Yorishiro::Tools::WriteFile.new
@@ -249,6 +251,7 @@ plan_mode false
 allow_tool Yorishiro::Tools::ReadFile.new
 allow_tool Yorishiro::Tools::WriteFile.new
 allow_tool Yorishiro::Tools::ListFiles.new
+allow_tool Yorishiro::Tools::Grep.new
 allow_tool Yorishiro::Tools::ExecuteCommand.new,
   allow_commands: [
     "ls *",
@@ -271,6 +274,7 @@ mcp_server "filesystem",
 | `read_file` | `Yorishiro::Tools::ReadFile` | Read file contents | Not required |
 | `write_file` | `Yorishiro::Tools::WriteFile` | Write to a file | Required every time |
 | `list_files` | `Yorishiro::Tools::ListFiles` | List directory / glob search | Not required |
+| `grep` | `Yorishiro::Tools::Grep` | Search file contents with a Ruby regexp | Not required |
 | `execute_command` | `Yorishiro::Tools::ExecuteCommand` | Execute shell commands | Pattern-based |
 
 ## Development
