@@ -217,6 +217,45 @@ class TestConfiguration < Minitest::Test
     end
   end
 
+  def test_on_registers_hook
+    @config.on(:before_tool_use) { :deny }
+
+    assert @config.hooks.any?(:before_tool_use)
+  end
+
+  def test_deny_helper_returns_denial
+    denial = @config.deny("custom reason")
+
+    assert_instance_of Yorishiro::Hooks::Denial, denial
+    assert_equal "custom reason", denial.reason
+
+    assert_equal "denied by hook", @config.deny.reason
+  end
+
+  def test_hooks_defined_in_rc_file
+    Dir.mktmpdir do |dir|
+      rc_path = File.join(dir, ".yorishirorc")
+      File.write(rc_path, <<~RC)
+        use provider: :anthropic, api_key: "test-from-rc"
+
+        on :before_tool_use do |tool_name, _args|
+          deny("blocked by rc") if tool_name == "write_file"
+        end
+      RC
+
+      @config.stub(:global_rc_path, rc_path) do
+        @config.stub(:local_rc_path, "/nonexistent") do
+          stub_skills_dirs { @config.load! }
+        end
+      end
+
+      # `deny` must resolve inside the block via the rc's instance_eval context.
+      denial = @config.hooks.run_before_tool_use("write_file", {})
+      assert_equal "blocked by rc", denial.reason
+      assert_nil @config.hooks.run_before_tool_use("read_file", {})
+    end
+  end
+
   def test_load_rc_file
     Dir.mktmpdir do |dir|
       rc_path = File.join(dir, ".yorishirorc")

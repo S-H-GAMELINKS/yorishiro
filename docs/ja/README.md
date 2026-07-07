@@ -254,6 +254,30 @@ end
 # => /changelog が自動で使えるようになる
 ```
 
+### フック
+
+`.yorishirorc` からライフサイクルイベントにRubyブロックを登録できます:
+
+```ruby
+# 許可プロンプトの前にツール呼び出しを拒否する
+# （拒否理由はツール結果としてLLMに返り、LLMは方針転換できる）
+on :before_tool_use do |tool_name, args|
+  deny("rm is not allowed") if tool_name == "execute_command" && args["command"].to_s.include?("rm ")
+end
+
+# ツール実行結果の監査（フックが失敗しても警告表示のみ）
+on :after_tool_use do |tool_name, _args, result|
+  File.open(".yorishiro/audit.log", "a") { |f| f.puts "#{tool_name}: #{result.to_s[0, 100]}" }
+end
+
+# LLMに届く前にメッセージをブロックする
+on :user_prompt_submit do |input|
+  deny("秘密鍵は貼らないでください") if input.include?("BEGIN PRIVATE KEY")
+end
+```
+
+拒否は明示的に `deny("理由")`（または `:deny`）を返した場合のみです。それ以外の戻り値は続行するため、ログ出力だけのフックも安全に書けます。`before_tool_use` フックが例外を投げた場合は安全側に倒して拒否になります（fail closed）。フックはMCPツールとPlanモードにも適用されます。
+
 ### 設定例（フル）
 
 ```ruby

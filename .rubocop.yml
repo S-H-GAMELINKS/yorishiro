@@ -25,6 +25,9 @@ Metrics/ClassLength:
     # The CLI is the REPL orchestrator; its size grows with every
     # user-facing feature (plan mode, sessions, slash commands, ...).
     - lib/yorishiro/cli.rb
+    # Test classes are flat collections of test methods; their length is
+    # driven by coverage, not design.
+    - test/**/*
 
 Metrics/AbcSize:
   Max: 50
