@@ -36,6 +36,37 @@ class TestConversation < Minitest::Test
     assert_equal "tc_1", @conversation.messages.last[:tool_call_id]
   end
 
+  def test_serializable_messages_returns_detached_copy
+    @conversation.add_message(:user, "hello")
+
+    copy = @conversation.serializable_messages
+    copy.first["content"] = "mutated"
+
+    assert_equal "hello", @conversation.messages.first[:content]
+  end
+
+  def test_restore_messages_round_trips_through_json
+    tool_calls = [{ id: "tc_1", name: "read_file", arguments: { "path" => "/tmp/test" } }]
+    @conversation.add_message(:user, "read it")
+    @conversation.add_message(:assistant, "", tool_calls: tool_calls)
+    @conversation.add_tool_result(tool_call_id: "tc_1", content: "file contents")
+    original_api_messages = @conversation.to_api_messages
+
+    raw = JSON.parse(JSON.generate(@conversation.serializable_messages))
+    restored = Yorishiro::Conversation.new
+    restored.restore_messages!(raw)
+
+    # Provider-facing conversion must match, so a resumed conversation is
+    # indistinguishable from a live one.
+    assert_equal JSON.generate(original_api_messages), JSON.generate(restored.to_api_messages)
+    assert_equal :assistant, restored.messages[1][:role]
+    assert_equal "read_file", restored.messages[1][:tool_calls].first[:name]
+  end
+
+  def test_restore_messages_rejects_invalid_role
+    assert_raises(ArgumentError) { @conversation.restore_messages!([{ "role" => "wizard", "content" => "x" }]) }
+  end
+
   def test_invalid_role_raises
     assert_raises(ArgumentError) { @conversation.add_message(:invalid, "test") }
   end

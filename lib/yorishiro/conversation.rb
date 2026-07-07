@@ -48,6 +48,31 @@ module Yorishiro
       @messages.clear
     end
 
+    # JSON-safe deep copy of the messages (string keys) for session
+    # persistence. The system prompt is intentionally excluded — a resumed
+    # session uses whatever the current configuration provides.
+    def serializable_messages
+      JSON.parse(JSON.generate(@messages))
+    end
+
+    # Replace the messages with ones loaded from a saved session
+    # (string-keyed hashes as produced by #serializable_messages).
+    # Tool-call arguments keep their string keys: providers pass them
+    # through as-is and the CLI symbolizes at execution time, matching the
+    # live message flow.
+    def restore_messages!(raw_messages)
+      @messages = raw_messages.map do |msg|
+        role = msg["role"].to_sym
+        validate_role!(role)
+        {
+          role: role,
+          content: msg["content"],
+          tool_calls: msg["tool_calls"]&.map { |tc| { id: tc["id"], name: tc["name"], arguments: tc["arguments"] } },
+          tool_call_id: msg["tool_call_id"]
+        }.compact
+      end
+    end
+
     def last_role
       @messages.last&.fetch(:role, nil)
     end

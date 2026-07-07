@@ -61,12 +61,17 @@ assistant> Hi! How can I help you today?
 - Type your message and press **Enter twice** to send
 - `Ctrl+C` or `/exit` to quit
 
+### Session Persistence & Resume
+
+Conversations are saved automatically to `.yorishiro/sessions/` under the launch directory — after every turn, and progressively during long tool loops. Resume with `yorishiro --continue` (most recent), `yorishiro --resume [ID]` (ID prefixes work; interactive picker when omitted), or the `/resume` command. `/clear` starts a new session while keeping the old one resumable. Sessions record their provider/model and print a notice when resumed under a different one; the newest 50 sessions are kept per directory.
+
 ### Slash Commands
 
 | Command | Description |
 |---------|-------------|
 | `/plan` | Toggle plan mode |
-| `/clear` | Clear conversation history |
+| `/clear` | Clear conversation history (starts a new session) |
+| `/resume` | List saved sessions and resume one |
 | `/tools` | List registered tools |
 | `/skills` | List registered skills |
 | `/exit` | Exit yorishiro |
@@ -78,6 +83,8 @@ assistant> Hi! How can I help you today?
 yorishiro --provider anthropic   # Select provider
 yorishiro --model gpt-4o         # Override model
 yorishiro --plan                 # Start in plan mode
+yorishiro --continue             # Resume the most recent session
+yorishiro --resume [ID]          # Resume a saved session (picker when ID is omitted)
 yorishiro --version              # Show version
 yorishiro --help                 # Show help
 ```
