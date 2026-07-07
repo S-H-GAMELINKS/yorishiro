@@ -35,6 +35,7 @@ use provider: :anthropic, api_key: ENV["ANTHROPIC_API_KEY"], model: "claude-sonn
 allow_tool Yorishiro::Tools::ReadFile.new
 allow_tool Yorishiro::Tools::WriteFile.new
 allow_tool Yorishiro::Tools::ListFiles.new
+allow_tool Yorishiro::Tools::Grep.new
 allow_tool Yorishiro::Tools::ExecuteCommand.new,
   allow_commands: ["ls", "git *", "bundle exec *", "cat *"]
 
@@ -126,6 +127,7 @@ use provider: :ollama, model: "llama3.1"
 # 基本ツール（許可不要）
 allow_tool Yorishiro::Tools::ReadFile.new
 allow_tool Yorishiro::Tools::ListFiles.new
+allow_tool Yorishiro::Tools::Grep.new
 
 # 書き込みツール（毎回許可確認）
 allow_tool Yorishiro::Tools::WriteFile.new
@@ -252,6 +254,7 @@ plan_mode false
 allow_tool Yorishiro::Tools::ReadFile.new
 allow_tool Yorishiro::Tools::WriteFile.new
 allow_tool Yorishiro::Tools::ListFiles.new
+allow_tool Yorishiro::Tools::Grep.new
 allow_tool Yorishiro::Tools::ExecuteCommand.new,
   allow_commands: [
     "ls *",
@@ -274,6 +277,7 @@ mcp_server "filesystem",
 | `read_file` | `Yorishiro::Tools::ReadFile` | ファイル内容を読み込む | 不要 |
 | `write_file` | `Yorishiro::Tools::WriteFile` | ファイルに書き込む | 毎回確認 |
 | `list_files` | `Yorishiro::Tools::ListFiles` | ディレクトリ一覧・glob検索 | 不要 |
+| `grep` | `Yorishiro::Tools::Grep` | ファイル内容をRuby正規表現で検索 | 不要 |
 | `execute_command` | `Yorishiro::Tools::ExecuteCommand` | シェルコマンドを実行 | パターンベース |
 
 ## 開発
