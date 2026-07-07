@@ -236,6 +236,24 @@ skill ReviewSkill.new
 # => /review で diff がLLMに渡り、エージェントループが実行される
 ```
 
+スキルはファイル配置による自動読み込みもできます。`~/.yorishiro/skills/*.rb`（グローバル）
+または `./.yorishiro/skills/*.rb`（プロジェクトローカル）に `Yorishiro::Skill` の
+サブクラスを定義するだけで、起動時に自動登録されます（`skill ...` の呼び出しは不要）。
+同名のスキルが両方にある場合はプロジェクトローカル側が優先されます。
+
+```ruby
+# .yorishiro/skills/changelog.rb
+class ChangelogSkill < Yorishiro::Skill
+  def name = "changelog"
+  def description = "直近のコミットを要約"
+
+  def execute(_context)
+    prompt("次のコミットをチェンジログ向けに要約してください:\n#{`git log --oneline -20`}")
+  end
+end
+# => /changelog が自動で使えるようになる
+```
+
 ### 設定例（フル）
 
 ```ruby

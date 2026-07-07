@@ -37,6 +37,15 @@ module Yorishiro
       @skills << skill_instance
     end
 
+    # Register a skill, replacing any same-name skill registered earlier
+    # (so ./.yorishiro/skills overrides ~/.yorishiro/skills).
+    def replace_skill(skill_instance)
+      raise SkillNotImplementedError, "Skill must implement #name" unless skill_instance.respond_to?(:name)
+
+      @skills.reject! { |s| s.name == skill_instance.name }
+      skill(skill_instance)
+    end
+
     def mcp_server(name, command:, args: [], env: {})
       @mcp_servers[name] = { command: command, args: args, env: env }
     end
@@ -65,6 +74,8 @@ module Yorishiro
     def load!
       load_rc_file(global_rc_path)
       load_rc_file(local_rc_path)
+      load_skill_files(global_skills_dir)
+      load_skill_files(local_skills_dir)
       validate!
     end
 
@@ -100,6 +111,18 @@ module Yorishiro
 
     def local_rc_path
       File.join(Dir.pwd, ".lyorishirorc")
+    end
+
+    def global_skills_dir
+      File.join(Dir.home, ".yorishiro", "skills")
+    end
+
+    def local_skills_dir
+      File.join(Dir.pwd, ".yorishiro", "skills")
+    end
+
+    def load_skill_files(dir)
+      SkillLoader.new(self).load_dir(dir)
     end
 
     def load_rc_file(path)

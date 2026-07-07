@@ -257,6 +257,24 @@ skill ReviewSkill.new
 # => /review feeds the diff to the LLM and runs the agent loop
 ```
 
+Skill files can also be auto-loaded: any `Yorishiro::Skill` subclass defined in
+`~/.yorishiro/skills/*.rb` (global) or `./.yorishiro/skills/*.rb` (project-local)
+is registered automatically at startup — no `skill ...` call needed. When both
+directories define a skill with the same name, the project-local one wins.
+
+```ruby
+# .yorishiro/skills/changelog.rb
+class ChangelogSkill < Yorishiro::Skill
+  def name = "changelog"
+  def description = "Summarize recent commits"
+
+  def execute(_context)
+    prompt("Summarize these commits for a changelog:\n#{`git log --oneline -20`}")
+  end
+end
+# => /changelog is available automatically
+```
+
 ### Full Configuration Example
 
 ```ruby

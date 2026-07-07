@@ -87,6 +87,12 @@ allow_tool Yorishiro::Tools::ExecuteCommand.new,
 # Custom Skills (Slash Commands)
 # ============================================================
 
+# Skills can also be auto-loaded from skill directories: any
+# Yorishiro::Skill subclass defined in ~/.yorishiro/skills/*.rb (global)
+# or ./.yorishiro/skills/*.rb (project-local) is registered automatically
+# — no `skill` call needed. Project-local skills override global ones
+# with the same name.
+
 # A skill that returns a String just prints its output:
 # class GitStatusSkill < Yorishiro::Skill
 #   def name = "git_status"
