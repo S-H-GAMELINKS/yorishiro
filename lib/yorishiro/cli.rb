@@ -240,10 +240,14 @@ module Yorishiro
     def plan_then_execute
       @output.puts "\n[Plan Mode] Generating plan..."
 
-      read_only_tools = Yorishiro.configuration.read_only_tool_definitions
+      # Expose the read-only tools plus a dedicated exit_plan_mode tool the model
+      # calls to signal the plan is ready. Without it the loop can only end on an
+      # empty tool_calls response, so a model that keeps reading never terminates.
+      exit_tool = Tools::ExitPlanMode.new
+      plan_tools = Yorishiro.configuration.read_only_tool_definitions + [exit_tool.definition]
 
       loop do
-        result = request_completion(read_only_tools)
+        result = request_completion(plan_tools)
 
         content = result[:content]
         tool_calls = result[:tool_calls]
@@ -252,26 +256,14 @@ module Yorishiro
 
         break if tool_calls.empty?
 
-        # read-only ツールはパーミッション不要で即実行
-        tool_calls.each do |tc|
-          tool = Yorishiro.configuration.find_tool(tc[:name])
-          unless tool
-            @conversation.add_tool_result(tool_call_id: tc[:id], content: "Error: Unknown tool '#{tc[:name]}'")
-            next
-          end
-
-          @output.puts "[Tool] Executing: #{tc[:name]}(#{format_args(tc[:arguments])})"
-          begin
-            output = tool.execute(**symbolize_keys(tc[:arguments]))
-            @output.puts "[Tool] Result: #{truncate(output, 200)}"
-            @conversation.add_tool_result(tool_call_id: tc[:id], content: output)
-          rescue StandardError => e
-            error_msg = "Error: #{e.message}"
-            @output.puts "[Tool] #{error_msg}"
-            @conversation.add_tool_result(tool_call_id: tc[:id], content: error_msg)
-          end
+        # The model signalled the plan is complete: present it and leave the loop.
+        exit_call = tool_calls.find { |tc| tc[:name] == exit_tool.name }
+        if exit_call
+          present_plan(exit_call, exit_tool)
+          break
         end
 
+        execute_read_only_tool_calls(tool_calls)
         persist_session # long tool loops save progressively
       end
 
@@ -284,6 +276,37 @@ module Yorishiro
       else
         @output.puts "Plan execution cancelled."
       end
+    end
+
+    # Run plan-mode read-only tool calls inline (no permission prompt).
+    def execute_read_only_tool_calls(tool_calls)
+      tool_calls.each do |tc|
+        tool = Yorishiro.configuration.find_tool(tc[:name])
+        unless tool
+          @conversation.add_tool_result(tool_call_id: tc[:id], content: "Error: Unknown tool '#{tc[:name]}'")
+          next
+        end
+
+        @output.puts "[Tool] Executing: #{tc[:name]}(#{format_args(tc[:arguments])})"
+        begin
+          output = tool.execute(**symbolize_keys(tc[:arguments]))
+          @output.puts "[Tool] Result: #{truncate(output, 200)}"
+          @conversation.add_tool_result(tool_call_id: tc[:id], content: output)
+        rescue StandardError => e
+          error_msg = "Error: #{e.message}"
+          @output.puts "[Tool] #{error_msg}"
+          @conversation.add_tool_result(tool_call_id: tc[:id], content: error_msg)
+        end
+      end
+    end
+
+    # Show the plan the model passed to exit_plan_mode and record a tool result
+    # for the call — required so the assistant tool_call is never left dangling
+    # (the follow-up agent_loop after "y" would otherwise send an unpaired
+    # tool_call, which Anthropic/OpenAI reject).
+    def present_plan(exit_call, exit_tool)
+      @output.puts "\n[Plan]\n#{exit_tool.execute(**symbolize_keys(exit_call[:arguments] || {}))}"
+      @conversation.add_tool_result(tool_call_id: exit_call[:id], content: "Plan presented to the user for approval.")
     end
 
     def execute_tool_calls(tool_calls)

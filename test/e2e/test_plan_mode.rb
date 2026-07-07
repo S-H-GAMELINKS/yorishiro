@@ -61,15 +61,55 @@ class TestPlanMode < Minitest::Test
     tool_names = received_tools.map { |t| t[:name] }
     assert_includes tool_names, "read_file"
     assert_includes tool_names, "list_files"
+    assert_includes tool_names, "exit_plan_mode"
     refute_includes tool_names, "write_file"
     refute_includes tool_names, "execute_command"
+  end
+
+  def test_plan_mode_exits_loop_when_exit_plan_mode_called
+    call_index = 0
+
+    provider = Yorishiro::E2E::MockProvider.new
+    provider.define_singleton_method(:chat) do |_conversation, tools: [], &block| # rubocop:disable Lint/UnusedBlockArgument
+      call_index += 1
+      if call_index == 1
+        # First call: LLM keeps reading.
+        text = "Let me read the file first."
+        block&.call(text)
+        {
+          content: text,
+          tool_calls: [
+            { id: "tc_1", name: "read_file", arguments: { "path" => __FILE__ } }
+          ]
+        }
+      else
+        # Second call: LLM signals the plan is ready via exit_plan_mode.
+        {
+          content: "",
+          tool_calls: [
+            { id: "tc_2", name: "exit_plan_mode", arguments: { "plan" => "1. Read 2. Modify 3. Write" } }
+          ]
+        }
+      end
+    end
+
+    Yorishiro.configuration.allow_tool(Yorishiro::Tools::ReadFile.new)
+
+    runner = Yorishiro::E2E::PlanRunner.new(provider: provider)
+    runner.input("Read the file and make a plan")
+
+    # Loop stops right after exit_plan_mode (no third completion requested).
+    assert_equal 2, call_index
+    # user + assistant(read_file) + tool_result + assistant(exit_plan_mode) + tool_result
+    assert_equal 5, runner.conversation.length
+    assert_equal :tool, runner.conversation.messages.last[:role]
   end
 
   def test_plan_mode_executes_read_only_tool_calls
     call_index = 0
 
     provider = Yorishiro::E2E::MockProvider.new
-    provider.define_singleton_method(:chat) do |_conversation, tools: [], &block|
+    provider.define_singleton_method(:chat) do |_conversation, tools: [], &block| # rubocop:disable Lint/UnusedBlockArgument
       call_index += 1
       if call_index == 1
         # First call: LLM requests a read_file tool call
