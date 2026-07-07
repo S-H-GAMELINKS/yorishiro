@@ -84,6 +84,26 @@ allow_tool Yorishiro::Tools::ExecuteCommand.new,
 #   env: { "GITHUB_TOKEN" => ENV["GITHUB_TOKEN"] }
 
 # ============================================================
+# Hooks
+# ============================================================
+
+# Run Ruby blocks on lifecycle events:
+#   :before_tool_use    (tool_name, args)         — before the permission prompt
+#   :after_tool_use     (tool_name, args, result) — after a successful execution
+#   :user_prompt_submit (input)                   — before the message reaches the LLM
+#
+# before_tool_use / user_prompt_submit blocks can veto the action by
+# returning deny("reason"); any other return value lets it proceed.
+#
+# on :before_tool_use do |tool_name, args|
+#   deny("rm is not allowed") if tool_name == "execute_command" && args["command"].to_s.include?("rm ")
+# end
+#
+# on :after_tool_use do |tool_name, _args, result|
+#   File.open(".yorishiro/audit.log", "a") { |f| f.puts "#{tool_name}: #{result.to_s[0, 100]}" }
+# end
+
+# ============================================================
 # Custom Skills (Slash Commands)
 # ============================================================
 

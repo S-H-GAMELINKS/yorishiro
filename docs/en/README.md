@@ -251,6 +251,30 @@ end
 # => /changelog is available automatically
 ```
 
+### Hooks
+
+Run Ruby blocks on lifecycle events from `.yorishirorc`:
+
+```ruby
+# Veto a tool call before the permission prompt (the denial is returned
+# to the LLM as the tool result so it can change course)
+on :before_tool_use do |tool_name, args|
+  deny("rm is not allowed") if tool_name == "execute_command" && args["command"].to_s.include?("rm ")
+end
+
+# Observe tool results (a failing hook only prints a warning)
+on :after_tool_use do |tool_name, _args, result|
+  File.open(".yorishiro/audit.log", "a") { |f| f.puts "#{tool_name}: #{result.to_s[0, 100]}" }
+end
+
+# Block a message before it reaches the LLM
+on :user_prompt_submit do |input|
+  deny("do not paste secrets") if input.include?("BEGIN PRIVATE KEY")
+end
+```
+
+Only an explicit `deny("reason")` (or `:deny`) return value vetoes the action — anything else proceeds, so logging-only hooks are safe. A `before_tool_use` hook that raises an exception denies the call (fail closed). Hooks also apply to MCP tools and plan mode.
+
 ### Full Configuration Example
 
 ```ruby

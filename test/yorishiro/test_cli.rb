@@ -18,6 +18,25 @@ class TestCLI < Minitest::Test
     def preview(_arguments) = raise "preview boom"
   end
 
+  class RecordingTool < Yorishiro::Tool
+    attr_reader :executed
+
+    def initialize
+      super
+      @executed = false
+    end
+
+    def name = "recording_tool"
+    def description = "records executions"
+    def parameters = { type: "object" }
+    def permission_check(_arguments) = :ask
+
+    def execute(**_params)
+      @executed = true
+      "recorded ok"
+    end
+  end
+
   class FakeProvider
     attr_accessor :budget
     attr_reader :chat_calls
@@ -288,6 +307,33 @@ class TestCLI < Minitest::Test
     Yorishiro.reset!
   end
 
+  def test_before_hook_denies_tool_and_skips_permission_prompt
+    Yorishiro.reset!
+    tool = RecordingTool.new
+    Yorishiro.configuration.allow_tool(tool)
+    Yorishiro.configuration.on(:before_tool_use) do |name, _args|
+      Yorishiro::Hooks::Denial.new("policy") if name == "recording_tool"
+    end
+    conv = Yorishiro::Conversation.new
+    @cli.instance_variable_set(:@conversation, conv)
+
+    prompt_called = false
+    fake_readline = lambda { |*_args|
+      prompt_called = true
+      "y"
+    }
+    Reline.stub(:readline, fake_readline) do
+      @cli.send(:execute_tool_calls, [{ id: "1", name: "recording_tool", arguments: {} }])
+    end
+
+    refute tool.executed
+    refute prompt_called # denied before the permission prompt
+    assert_includes conv.messages.last[:content], "denied by hook: policy"
+    assert_includes @output.string, "[Hook] Denied: recording_tool (policy)"
+  ensure
+    Yorishiro.reset!
+  end
+
   def test_persist_session_skips_empty_conversation
     Yorishiro.reset!
     Dir.mktmpdir do |dir|
@@ -298,6 +344,22 @@ class TestCLI < Minitest::Test
 
       assert_nil store.latest
     end
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_before_hook_exception_denies_tool
+    Yorishiro.reset!
+    tool = RecordingTool.new
+    Yorishiro.configuration.allow_tool(tool)
+    Yorishiro.configuration.on(:before_tool_use) { raise "guard broke" }
+    conv = Yorishiro::Conversation.new
+    @cli.instance_variable_set(:@conversation, conv)
+
+    @cli.send(:execute_tool_calls, [{ id: "1", name: "recording_tool", arguments: {} }])
+
+    refute tool.executed
+    assert_includes conv.messages.last[:content], "guard broke"
   ensure
     Yorishiro.reset!
   end
@@ -315,6 +377,25 @@ class TestCLI < Minitest::Test
       assert_equal 2, store.list.length
       assert_includes @output.string, "Started a new session"
     end
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_after_hook_receives_result
+    Yorishiro.reset!
+    tool = RecordingTool.new
+    Yorishiro.configuration.allow_tool(tool)
+    received = nil
+    Yorishiro.configuration.on(:after_tool_use) { |name, args, result| received = [name, args, result] }
+    conv = Yorishiro::Conversation.new
+    @cli.instance_variable_set(:@conversation, conv)
+
+    simulate_input("y") do
+      @cli.send(:execute_tool_calls, [{ id: "1", name: "recording_tool", arguments: { "a" => 1 } }])
+    end
+
+    assert tool.executed
+    assert_equal ["recording_tool", { "a" => 1 }, "recorded ok"], received
   ensure
     Yorishiro.reset!
   end
@@ -342,6 +423,24 @@ class TestCLI < Minitest::Test
       assert_includes @output.string, "Resumed session #{saved_id}"
       assert_includes @output.string, "recorded with ollama:gemma4:12b" # model mismatch notice
     end
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_after_hook_error_warns_but_keeps_result
+    Yorishiro.reset!
+    tool = RecordingTool.new
+    Yorishiro.configuration.allow_tool(tool)
+    Yorishiro.configuration.on(:after_tool_use) { raise "observer broke" }
+    conv = Yorishiro::Conversation.new
+    @cli.instance_variable_set(:@conversation, conv)
+
+    simulate_input("y") do
+      @cli.send(:execute_tool_calls, [{ id: "1", name: "recording_tool", arguments: {} }])
+    end
+
+    assert_equal "recorded ok", conv.messages.last[:content] # result kept, no duplicate error result
+    assert_includes @output.string, "after_tool_use hook error: observer broke"
   ensure
     Yorishiro.reset!
   end
@@ -377,6 +476,24 @@ class TestCLI < Minitest::Test
       refute_nil session # the user message survived the crash via ensure
       assert_equal "will fail", session[:title]
     end
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_user_prompt_submit_denial_blocks_message
+    Yorishiro.reset!
+    Yorishiro.configuration.on(:user_prompt_submit) { |input| Yorishiro::Hooks::Denial.new("secret") if input.include?("password") }
+    conv = Yorishiro::Conversation.new
+    provider = FakeProvider.new(budget: nil)
+    @cli.instance_variable_set(:@conversation, conv)
+    @cli.instance_variable_set(:@provider, provider)
+    @cli.instance_variable_set(:@plan_mode, false)
+
+    @cli.send(:process_user_input, "my password is hunter2")
+
+    assert_equal 0, conv.length
+    assert_equal 0, provider.chat_calls
+    assert_includes @output.string, "[Hook] Prompt blocked: secret"
   ensure
     Yorishiro.reset!
   end

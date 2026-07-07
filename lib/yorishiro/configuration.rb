@@ -4,7 +4,7 @@ module Yorishiro
   class Configuration
     attr_reader :provider_name, :api_key, :model, :allowed_tools, :skills,
                 :mcp_servers, :system_prompt_text, :plan_mode_enabled, :ollama_num_ctx_value,
-                :auto_compact_enabled
+                :auto_compact_enabled, :hooks
 
     def initialize
       @provider_name = nil
@@ -17,6 +17,7 @@ module Yorishiro
       @plan_mode_enabled = false
       @ollama_num_ctx_value = nil
       @auto_compact_enabled = true
+      @hooks = Hooks.new
     end
 
     def use(provider:, api_key: nil, model: nil)
@@ -69,6 +70,20 @@ module Yorishiro
     # disable from .yorishirorc with `auto_compact false`.
     def auto_compact(enabled)
       @auto_compact_enabled = enabled
+    end
+
+    # Register a lifecycle hook from .yorishirorc, e.g.
+    #   on :before_tool_use do |tool_name, args|
+    #     deny("rm is not allowed") if args["command"].to_s.start_with?("rm")
+    #   end
+    def on(event, &)
+      @hooks.on(event, &)
+    end
+
+    # Hook helper: return deny("reason") from a before_tool_use or
+    # user_prompt_submit block to veto the action.
+    def deny(reason = "denied by hook")
+      Hooks::Denial.new(reason)
     end
 
     def load!

@@ -139,6 +139,12 @@ module Yorishiro
     end
 
     def process_user_input(input)
+      denial = Yorishiro.configuration.hooks.run_user_prompt_submit(input)
+      if denial
+        @output.puts "[Hook] Prompt blocked: #{denial.reason}"
+        return
+      end
+
       @conversation.add_message(:user, input)
 
       if @plan_mode
@@ -279,6 +285,8 @@ module Yorishiro
     end
 
     # Run plan-mode read-only tool calls inline (no permission prompt).
+    # before/after hooks still apply, so a policy denial is enforced in
+    # plan mode too.
     def execute_read_only_tool_calls(tool_calls)
       tool_calls.each do |tc|
         tool = Yorishiro.configuration.find_tool(tc[:name])
@@ -287,16 +295,9 @@ module Yorishiro
           next
         end
 
-        @output.puts "[Tool] Executing: #{tc[:name]}(#{format_args(tc[:arguments])})"
-        begin
-          output = tool.execute(**symbolize_keys(tc[:arguments]))
-          @output.puts "[Tool] Result: #{truncate(output, 200)}"
-          @conversation.add_tool_result(tool_call_id: tc[:id], content: output)
-        rescue StandardError => e
-          error_msg = "Error: #{e.message}"
-          @output.puts "[Tool] #{error_msg}"
-          @conversation.add_tool_result(tool_call_id: tc[:id], content: error_msg)
-        end
+        next if denied_by_hook?(tc)
+
+        run_tool(tool, tc)
       end
     end
 
@@ -319,6 +320,8 @@ module Yorishiro
           next
         end
 
+        next if denied_by_hook?(tc)
+
         permission = tool.permission_check(tc[:arguments])
 
         if permission == :ask
@@ -329,18 +332,41 @@ module Yorishiro
           end
         end
 
-        @output.puts "[Tool] Executing: #{tc[:name]}(#{format_args(tc[:arguments])})"
-
-        begin
-          output = tool.execute(**symbolize_keys(tc[:arguments]))
-          @output.puts "[Tool] Result: #{truncate(output, 200)}"
-          @conversation.add_tool_result(tool_call_id: tc[:id], content: output)
-        rescue StandardError => e
-          error_msg = "Error: #{e.message}"
-          @output.puts "[Tool] #{error_msg}"
-          @conversation.add_tool_result(tool_call_id: tc[:id], content: error_msg)
-        end
+        run_tool(tool, tc)
       end
+    end
+
+    # before_tool_use hooks fire ahead of the permission prompt (like
+    # Claude Code's PreToolUse) so a policy denial never asks the user.
+    # The denial is returned to the LLM as the tool result so it can
+    # change course.
+    def denied_by_hook?(tool_call)
+      denial = Yorishiro.configuration.hooks.run_before_tool_use(tool_call[:name], tool_call[:arguments])
+      return false unless denial
+
+      @output.puts "[Hook] Denied: #{tool_call[:name]} (#{denial.reason})"
+      @conversation.add_tool_result(tool_call_id: tool_call[:id], content: "Tool call denied by hook: #{denial.reason}")
+      true
+    end
+
+    def run_tool(tool, tool_call)
+      @output.puts "[Tool] Executing: #{tool_call[:name]}(#{format_args(tool_call[:arguments])})"
+      output = tool.execute(**symbolize_keys(tool_call[:arguments]))
+      @output.puts "[Tool] Result: #{truncate(output, 200)}"
+      @conversation.add_tool_result(tool_call_id: tool_call[:id], content: output)
+      run_after_hooks(tool_call, output)
+    rescue StandardError => e
+      error_msg = "Error: #{e.message}"
+      @output.puts "[Tool] #{error_msg}"
+      @conversation.add_tool_result(tool_call_id: tool_call[:id], content: error_msg)
+    end
+
+    # after hooks are observational: a failure is warned about but never
+    # alters the already-recorded tool result.
+    def run_after_hooks(tool_call, output)
+      Yorishiro.configuration.hooks.run_after_tool_use(tool_call[:name], tool_call[:arguments], output)
+    rescue StandardError => e
+      @output.puts "[!] after_tool_use hook error: #{e.message}"
     end
 
     def ask_permission(tool, tool_call)
