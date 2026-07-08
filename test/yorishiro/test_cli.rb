@@ -565,6 +565,33 @@ class TestCLI < Minitest::Test
     Yorishiro.reset!
   end
 
+  def test_attach_tools_hands_provider_and_output_to_attachable_tools
+    Yorishiro.reset!
+    attachable = Class.new(Yorishiro::Tool) do
+      attr_reader :attached_provider, :attached_output
+
+      def name = "attachable"
+      def description = "records attach"
+      def parameters = { type: "object" }
+
+      def attach(provider:, output:)
+        @attached_provider = provider
+        @attached_output = output
+      end
+    end.new
+    Yorishiro.configuration.allow_tool(attachable)
+    Yorishiro.configuration.allow_tool(FakeTool.new) # no #attach — must be skipped, not crash
+    provider = FakeProvider.new
+    @cli.instance_variable_set(:@provider, provider)
+
+    @cli.send(:attach_tools!)
+
+    assert_same provider, attachable.attached_provider
+    assert_same @output, attachable.attached_output
+  ensure
+    Yorishiro.reset!
+  end
+
   def test_skill_returning_string_prints_output
     Yorishiro.reset!
     Yorishiro.configuration.skill(PrintingSkill.new)

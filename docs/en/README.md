@@ -135,7 +135,25 @@ allow_tool Yorishiro::Tools::EditFile.new
 # Command execution (pattern-based permission)
 allow_tool Yorishiro::Tools::ExecuteCommand.new,
   allow_commands: ["ls", "git *", "bundle exec *"]
+
+# Subagent (delegates read-only research to a fresh context window)
+allow_tool Yorishiro::Tools::Task.new
 ```
+
+### Subagent (`task` tool)
+
+The `task` tool lets the LLM delegate a read-only research task (finding where something is defined, summarizing several files) to a subagent that runs its own agent loop in a fresh context window. The subagent can use the registered read-only tools (`read_file`, `list_files`, `grep` — never `task` itself, so subagents cannot nest), and only its final text summary enters the parent conversation.
+
+This keeps exploratory tool output out of the parent's context — especially valuable on small local context windows (e.g. Ollama with `num_ctx 8192`), where reading a handful of files can otherwise use up the whole budget. Each subagent tool call is shown as an indented progress line:
+
+```
+[Tool] Executing: task(prompt: Find where sessions are persisted...)
+  [task] grep(pattern: def save)
+  [task] read_file(path: lib/yorishiro/session_store.rb)
+[Tool] Result: Sessions are saved to .yorishiro/sessions/<id>.json by...
+```
+
+Lifecycle hooks (`before_tool_use` / `after_tool_use`) fire for the subagent's tool calls too, and the loop is bounded at 15 iterations. Because the tool is read-only, it needs no permission prompt and is also available in plan mode.
 
 ### Command Execution Permission Model
 
@@ -305,6 +323,7 @@ allow_tool Yorishiro::Tools::ExecuteCommand.new,
     "bundle exec *",
     "ruby *"
   ]
+allow_tool Yorishiro::Tools::Task.new
 
 # MCP servers
 mcp_server "filesystem",
@@ -322,6 +341,7 @@ mcp_server "filesystem",
 | `list_files` | `Yorishiro::Tools::ListFiles` | List directory / glob search | Not required |
 | `grep` | `Yorishiro::Tools::Grep` | Search file contents with a Ruby regexp | Not required |
 | `execute_command` | `Yorishiro::Tools::ExecuteCommand` | Execute shell commands | Pattern-based |
+| `task` | `Yorishiro::Tools::Task` | Delegate read-only research to a subagent with a fresh context window | Not required |
 
 ## Development
 

@@ -8,11 +8,6 @@ module Yorishiro
     # Fraction of the context budget at which auto-compaction kicks in.
     COMPACT_THRESHOLD = 0.8
 
-    # Tool-result size caps used when the provider reports no context
-    # budget (cloud models) and as the floor when it does.
-    DEFAULT_TOOL_RESULT_CHARS = 30_000
-    MIN_TOOL_RESULT_CHARS = 2_000
-
     def initialize
       @conversation = nil
       @provider = nil
@@ -78,6 +73,7 @@ module Yorishiro
       config.instance_variable_set(:@model, @cli_opts[:model]) if @cli_opts[:model]
 
       @provider = Provider.build(config)
+      attach_tools!
       @plan_mode = @cli_opts.fetch(:plan_mode, config.plan_mode_enabled)
       @conversation = Conversation.new(system_prompt: config.system_prompt_text)
 
@@ -93,6 +89,14 @@ module Yorishiro
       @session_store = SessionStore.new
       @session_id = nil
       resume_from_options!
+    end
+
+    # Hand the session's provider and output to tools that spawn their own
+    # LLM loops (e.g. the task tool's subagent).
+    def attach_tools!
+      Yorishiro.configuration.allowed_tools.each do |tool|
+        tool.attach(provider: @provider, output: @output) if tool.respond_to?(:attach)
+      end
     end
 
     def print_welcome
@@ -371,23 +375,12 @@ module Yorishiro
       @conversation.add_tool_result(tool_call_id: tool_call[:id], content: error_msg)
     end
 
-    # Cap a tool result before it enters the conversation so a single huge
-    # output (a whole file, a big command dump) cannot exhaust a small
-    # context window. Scaled to the provider budget when one is known.
     def cap_tool_result(output)
-      limit = max_tool_result_chars
-      return output if output.to_s.length <= limit
-
-      "#{output[0...limit]}\n... (tool output truncated: showing #{limit} of #{output.length} characters. " \
-        "Narrow the request — offset/limit, a glob, or a more specific pattern — to see the rest.)"
+      ToolResultCap.cap(output, budget: @provider&.context_budget_tokens)
     end
 
-    # One tool result may take at most a quarter of the context budget.
     def max_tool_result_chars
-      budget = @provider&.context_budget_tokens
-      return DEFAULT_TOOL_RESULT_CHARS unless budget
-
-      [budget * Conversation::CHARS_PER_TOKEN / 4, MIN_TOOL_RESULT_CHARS].max
+      ToolResultCap.max_chars(@provider&.context_budget_tokens)
     end
 
     # after hooks are observational: a failure is warned about but never

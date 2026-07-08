@@ -68,6 +68,10 @@ allow_tool Yorishiro::Tools::ExecuteCommand.new,
     "ruby *"
   ]
 
+# Subagent: delegate read-only research to a fresh context window
+# (no permission required — the subagent only gets read-only tools)
+allow_tool Yorishiro::Tools::Task.new
+
 # ============================================================
 # MCP Servers
 # ============================================================

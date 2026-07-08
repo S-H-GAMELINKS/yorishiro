@@ -137,7 +137,25 @@ allow_tool Yorishiro::Tools::EditFile.new
 # コマンド実行ツール（パターンベース許可）
 allow_tool Yorishiro::Tools::ExecuteCommand.new,
   allow_commands: ["ls", "git *", "bundle exec *"]
+
+# サブエージェント（読み取り専用の調査を新しいコンテキストウィンドウへ委譲）
+allow_tool Yorishiro::Tools::Task.new
 ```
+
+### サブエージェント（`task` ツール）
+
+`task` ツールを使うと、LLM は読み取り専用の調査タスク（定義箇所の特定、複数ファイルの要約など）を、独立したコンテキストウィンドウでエージェントループを回すサブエージェントに委譲できます。サブエージェントは登録済みの読み取り専用ツール（`read_file` / `list_files` / `grep`。`task` 自身は渡されないためネストしません）を使い、最終的なテキスト要約だけが親の会話に入ります。
+
+探索中のツール出力が親のコンテキストに入らないため、小さいローカルコンテキスト（例: Ollama の `num_ctx 8192`）では特に有効です。数ファイル読むだけでコンテキストを使い切る、という状況を避けられます。サブエージェントのツール呼び出しはインデント付きの進捗行として表示されます:
+
+```
+[Tool] Executing: task(prompt: Find where sessions are persisted...)
+  [task] grep(pattern: def save)
+  [task] read_file(path: lib/yorishiro/session_store.rb)
+[Tool] Result: Sessions are saved to .yorishiro/sessions/<id>.json by...
+```
+
+ライフサイクルフック（`before_tool_use` / `after_tool_use`）はサブエージェントのツール呼び出しにも適用され、ループは最大15回で打ち切られます。読み取り専用ツールのため許可プロンプトは不要で、プランモードでも利用できます。
 
 ### コマンド実行の許可モデル
 
@@ -308,6 +326,7 @@ allow_tool Yorishiro::Tools::ExecuteCommand.new,
     "bundle exec *",
     "ruby *"
   ]
+allow_tool Yorishiro::Tools::Task.new
 
 # MCPサーバ
 mcp_server "filesystem",
@@ -325,6 +344,7 @@ mcp_server "filesystem",
 | `list_files` | `Yorishiro::Tools::ListFiles` | ディレクトリ一覧・glob検索 | 不要 |
 | `grep` | `Yorishiro::Tools::Grep` | ファイル内容をRuby正規表現で検索 | 不要 |
 | `execute_command` | `Yorishiro::Tools::ExecuteCommand` | シェルコマンドを実行 | パターンベース |
+| `task` | `Yorishiro::Tools::Task` | 読み取り専用の調査を新しいコンテキストのサブエージェントへ委譲 | 不要 |
 
 ## 開発
 
