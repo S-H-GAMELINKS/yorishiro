@@ -91,6 +91,8 @@ yorishiro --resume 2026070  # resume by id (prefixes work)
 
 Inside the REPL, `/resume` shows the same picker and `/clear` starts a new session (the old one stays on disk and remains resumable). Sessions record which provider/model they were created with; resuming under a different one prints a notice and continues with the current configuration. The newest 50 sessions are kept per directory.
 
+A session can only be open in one process at a time. If you resume a session that another `yorishiro` in the same directory is already using, it won't attach to it (which would overwrite that process's history) — it prints a notice and starts a fresh session instead.
+
 ### Slash Commands
 
 | Command | Description |

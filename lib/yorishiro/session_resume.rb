@@ -49,6 +49,11 @@ module Yorishiro
         return nil
       end
 
+      unless @store.claim(session[:id])
+        @output.puts "[i] Session #{session[:id]} is in use by another process. Starting a new session."
+        return nil
+      end
+
       @conversation.restore_messages!(session[:messages])
 
       recorded = "#{session[:provider]}:#{session[:model]}"
