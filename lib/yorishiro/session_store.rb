@@ -18,15 +18,49 @@ module Yorishiro
     def initialize(dir: Dir.pwd, max_sessions: MAX_SESSIONS)
       @sessions_dir = File.join(dir, DIR_NAME)
       @max_sessions = max_sessions
+      @locks = {}
     end
 
     attr_reader :sessions_dir
+
+    # Take exclusive ownership of a session id for this process, so a second
+    # `yorishiro` resuming the same session in the same directory doesn't
+    # write over this one's history (last-writer-wins data loss). Returns
+    # true when acquired (or already held by us), false when another live
+    # process owns it. The advisory lock is released automatically on
+    # process exit. Filesystems without flock fail open to preserve the
+    # single-user behaviour.
+    def claim(id)
+      return true if @locks.key?(id)
+
+      FileUtils.mkdir_p(@sessions_dir)
+      # Held open for the process lifetime so the advisory lock persists;
+      # the block form would close it and release the lock immediately.
+      lock = File.open(lock_path_for(id), File::CREAT | File::RDWR, 0o644) # rubocop:disable Style/FileOpen
+      if lock.flock(File::LOCK_EX | File::LOCK_NB)
+        @locks[id] = lock
+        true
+      else
+        lock.close
+        false
+      end
+    rescue SystemCallError
+      true
+    end
+
+    # Release every lock held by this store. The OS also releases them on
+    # process exit; this exists for tests and explicit teardown.
+    def release_locks
+      @locks.each_value { |lock| lock.close unless lock.closed? }
+      @locks.clear
+    end
 
     # Write the session and return its id (generating one when nil). The
     # original created_at is preserved across saves. Returns nil when the
     # write fails — persistence must never break a REPL turn.
     def save(id:, messages:, provider:, model:)
       id ||= generate_id
+      claim(id)
       existing = parse_session(path_for(id))
       now = Time.now.utc.iso8601
 
@@ -93,7 +127,7 @@ module Yorishiro
 
     def write_atomically(path, content)
       FileUtils.mkdir_p(@sessions_dir)
-      tmp_path = "#{path}.tmp"
+      tmp_path = "#{path}.#{Process.pid}.tmp"
       File.write(tmp_path, content)
       File.rename(tmp_path, path)
     end
@@ -101,13 +135,22 @@ module Yorishiro
     def prune!
       paths = Dir.glob(File.join(@sessions_dir, "*.json")).sort_by { |path| File.mtime(path) }
       excess = paths.length - @max_sessions
-      paths.first(excess).each { |path| File.delete(path) } if excess.positive?
+      return unless excess.positive?
+
+      paths.first(excess).each do |path|
+        File.delete(path)
+        FileUtils.rm_f("#{path}.lock")
+      end
     rescue SystemCallError
       nil
     end
 
     def path_for(id)
       File.join(@sessions_dir, "#{id}.json")
+    end
+
+    def lock_path_for(id)
+      "#{path_for(id)}.lock"
     end
 
     # Timestamp prefix keeps ids readable and roughly sortable; the random

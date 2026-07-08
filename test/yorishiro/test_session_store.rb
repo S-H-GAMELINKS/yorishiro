@@ -138,6 +138,48 @@ class TestSessionStore < Minitest::Test
     end
   end
 
+  def test_claim_blocks_a_second_owner
+    Dir.mktmpdir do |dir|
+      owner = Yorishiro::SessionStore.new(dir: dir)
+      other = Yorishiro::SessionStore.new(dir: dir)
+      id = owner.save(id: nil, messages: messages, provider: :ollama, model: "m")
+
+      assert owner.claim(id), "the owning store should re-claim its own session"
+      refute other.claim(id), "a second process must not claim a session already in use"
+    ensure
+      owner&.release_locks
+      other&.release_locks
+    end
+  end
+
+  def test_claim_succeeds_after_owner_releases
+    Dir.mktmpdir do |dir|
+      owner = Yorishiro::SessionStore.new(dir: dir)
+      other = Yorishiro::SessionStore.new(dir: dir)
+      id = owner.save(id: nil, messages: messages, provider: :ollama, model: "m")
+      owner.release_locks
+
+      assert other.claim(id), "a released session must be claimable again"
+    ensure
+      other&.release_locks
+    end
+  end
+
+  def test_prune_removes_orphaned_lock_files
+    Dir.mktmpdir do |dir|
+      store = Yorishiro::SessionStore.new(dir: dir, max_sessions: 1)
+      first = store.save(id: nil, messages: messages, provider: :ollama, model: "m")
+      store.release_locks
+      store.save(id: nil, messages: messages, provider: :ollama, model: "m")
+
+      sessions_dir = File.join(dir, ".yorishiro", "sessions")
+      refute_path_exists File.join(sessions_dir, "#{first}.json")
+      refute_path_exists File.join(sessions_dir, "#{first}.json.lock")
+    ensure
+      store&.release_locks
+    end
+  end
+
   private
 
   def messages
