@@ -5,6 +5,13 @@ require "open3"
 module Yorishiro
   module Tools
     class ExecuteCommand < Tool
+      # Commands run via `sh -c`, so these characters can chain or inject
+      # additional commands (`;`, `&`, `|`, newlines), substitute commands
+      # (`$`, backtick, `(`, `)`), or redirect files (`<`, `>`). Commands
+      # containing any of them never auto-match allow_commands and always
+      # fall back to the interactive permission prompt.
+      SHELL_METACHARACTERS = /[;&|`$<>()\n\r]/
+
       def initialize
         super
         @allow_commands = []
@@ -62,6 +69,7 @@ module Yorishiro
 
       def command_allowed?(command)
         return true if @session_allowed.include?(command)
+        return false if command.match?(SHELL_METACHARACTERS)
 
         @allow_commands.any? { |pattern| File.fnmatch(pattern, command) }
       end
