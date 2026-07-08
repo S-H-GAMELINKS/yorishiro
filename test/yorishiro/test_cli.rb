@@ -215,6 +215,36 @@ class TestCLI < Minitest::Test
     refute_includes @output.string, "[!]"
   end
 
+  def test_accumulate_and_print_usage
+    @cli.instance_variable_set(:@provider, FakeProvider.new(budget: 1000))
+    @cli.send(:accumulate_usage, { content: "a", tool_calls: [], usage: { input: 30, output: 5 } })
+    @cli.send(:accumulate_usage, { content: "b", tool_calls: [], usage: { input: 12, output: 8 } })
+
+    @cli.send(:print_usage)
+    output = @output.string
+    assert_includes output, "prompt 12, completion 8, total 20"   # last turn
+    assert_includes output, "prompt 42, completion 13, total 55"  # session
+    assert_includes output, "Context: 12 / 1000 tokens"
+  end
+
+  def test_print_usage_without_data_falls_back_to_estimate
+    @cli.instance_variable_set(:@provider, FakeProvider.new(budget: nil))
+    @cli.instance_variable_set(:@conversation, Yorishiro::Conversation.new)
+
+    @cli.send(:print_usage)
+    assert_includes @output.string, "No token usage reported"
+  end
+
+  def test_clear_conversation_resets_usage
+    @cli.instance_variable_set(:@provider, FakeProvider.new(budget: nil))
+    @cli.send(:accumulate_usage, { content: "a", tool_calls: [], usage: { input: 30, output: 5 } })
+
+    @cli.send(:clear_conversation!)
+
+    assert_equal({ input: 0, output: 0 }, @cli.instance_variable_get(:@session_usage))
+    assert_nil @cli.instance_variable_get(:@last_usage)
+  end
+
   def test_manage_context_trims_when_compaction_disabled
     Yorishiro.reset!
     Yorishiro.configuration.auto_compact(false)

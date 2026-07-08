@@ -201,7 +201,18 @@ module Yorishiro
       @output.puts
 
       warn_if_empty_or_truncated(result)
+      accumulate_usage(result)
       result
+    end
+
+    def accumulate_usage(result)
+      usage = result[:usage]
+      return unless usage && (usage[:input] || usage[:output])
+
+      @last_usage = usage
+      totals = (@session_usage ||= { input: 0, output: 0 })
+      totals[:input] += usage[:input].to_i
+      totals[:output] += usage[:output].to_i
     end
 
     # Keep the conversation inside the budget in three escalating steps:
@@ -490,31 +501,65 @@ module Yorishiro
         list_tools
       when "/skills"
         list_skills
+      when "/usage"
+        print_usage
       when "/exit", "/quit"
         @output.puts "Goodbye!"
         exit
       when "/help"
         print_help
       else
-        skill = Yorishiro.configuration.skills.find { |s| "/#{s.name}" == command }
-        if skill
-          result = skill.execute({ conversation: @conversation, args: args })
-          case result
-          when Yorishiro::Skill::Prompt
-            process_user_input(result.text) # inject prompt -> plan/agent loop
-          when String
-            @output.puts result
-          end
-        else
-          @output.puts "Unknown command: #{command}. Type /help for available commands."
-        end
+        handle_skill_command(command, args)
+      end
+    end
+
+    def handle_skill_command(command, args)
+      skill = Yorishiro.configuration.skills.find { |s| "/#{s.name}" == command }
+      unless skill
+        @output.puts "Unknown command: #{command}. Type /help for available commands."
+        return
+      end
+
+      result = skill.execute({ conversation: @conversation, args: args })
+      case result
+      when Yorishiro::Skill::Prompt
+        process_user_input(result.text) # inject prompt -> plan/agent loop
+      when String
+        @output.puts result
       end
     end
 
     def clear_conversation!
       @conversation = Conversation.new(system_prompt: Yorishiro.configuration.system_prompt_text)
       @session_id = nil # the old session file stays on disk for /resume
+      @session_usage = { input: 0, output: 0 }
+      @last_usage = nil
       @output.puts "Conversation cleared. Started a new session."
+    end
+
+    def print_usage
+      totals = (@session_usage ||= { input: 0, output: 0 })
+      unless @last_usage || totals[:input].positive? || totals[:output].positive?
+        estimate = @conversation&.estimated_tokens
+        note = "No token usage reported yet by this provider."
+        note += " Estimated conversation size: ~#{estimate} tokens." if estimate
+        @output.puts note
+        return
+      end
+
+      if @last_usage
+        input = @last_usage[:input].to_i
+        output = @last_usage[:output].to_i
+        @output.puts "Token usage (last turn): prompt #{input}, completion #{output}, total #{input + output}"
+      end
+      @output.puts "Token usage (session):   prompt #{totals[:input]}, completion #{totals[:output]}, " \
+                   "total #{totals[:input] + totals[:output]}"
+
+      budget = @provider.context_budget_tokens
+      return unless budget && @last_usage && @last_usage[:input]
+
+      input = @last_usage[:input].to_i
+      @output.puts "Context: #{input} / #{budget} tokens (#{(input * 100.0 / budget).round}%)"
     end
 
     def list_tools
@@ -544,6 +589,7 @@ module Yorishiro
           /resume   - List and resume a saved session
           /tools    - List available tools
           /skills   - List available skills
+          /usage    - Show token usage
           /exit     - Exit yorishiro
           /help     - Show this help
       HELP

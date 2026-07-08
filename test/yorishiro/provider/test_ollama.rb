@@ -240,6 +240,19 @@ class TestProviderOllama < Minitest::Test
     assert_equal "stop", result[:meta][:done_reason]
   end
 
+  def test_chat_reports_usage
+    body = "#{[
+      JSON.generate({ message: { role: "assistant", content: "Hi" }, done: false }),
+      JSON.generate({ message: { role: "assistant", content: "" }, done: true, prompt_eval_count: 42, eval_count: 7 })
+    ].join("\n")}\n"
+
+    stub_request(:post, "http://localhost:11434/api/chat")
+      .to_return(status: 200, body: body, headers: { "Content-Type" => "application/x-ndjson" })
+
+    result = @provider.chat(@conversation)
+    assert_equal({ input: 42, output: 7 }, result[:usage])
+  end
+
   private
 
   def stub_ollama_stream(text)

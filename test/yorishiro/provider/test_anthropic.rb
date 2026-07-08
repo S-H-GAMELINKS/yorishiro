@@ -88,6 +88,26 @@ class TestProviderAnthropic < Minitest::Test
     assert_raises(Yorishiro::ProviderError) { @provider.chat(@conversation) }
   end
 
+  def test_chat_reports_usage
+    body = sse_events([
+                        { event: "message_start",
+                          data: { type: "message_start", message: { usage: { input_tokens: 55, output_tokens: 1 } } } },
+                        { event: "content_block_start",
+                          data: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } } },
+                        { event: "content_block_delta",
+                          data: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "hi" } } },
+                        { event: "content_block_stop", data: { type: "content_block_stop", index: 0 } },
+                        { event: "message_delta", data: { type: "message_delta", usage: { output_tokens: 9 } } },
+                        { event: "message_stop", data: { type: "message_stop" } }
+                      ])
+
+    stub_request(:post, "https://api.anthropic.com/v1/messages")
+      .to_return(status: 200, body: body, headers: { "Content-Type" => "text/event-stream" })
+
+    result = @provider.chat(@conversation)
+    assert_equal({ input: 55, output: 9 }, result[:usage])
+  end
+
   private
 
   def stub_anthropic_stream(text)

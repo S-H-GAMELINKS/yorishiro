@@ -46,6 +46,7 @@ module Yorishiro
         @last_meta = {}
         result = post_stream(uri, headers: headers, body: body, &block)
         result[:meta] = @last_meta
+        result[:usage] = { input: @last_meta[:prompt_eval_count], output: @last_meta[:eval_count] }
         debug_log("Ollama response", result)
         result
       end

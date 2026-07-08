@@ -89,6 +89,31 @@ class TestProviderOpenAI < Minitest::Test
     assert_raises(Yorishiro::ProviderError) { @provider.chat(@conversation) }
   end
 
+  def test_chat_reports_usage
+    body = [
+      "data: #{JSON.generate({ choices: [{ delta: { content: "hi" }, index: 0 }] })}\n\n",
+      "data: #{JSON.generate({ choices: [{ delta: {}, finish_reason: "stop", index: 0 }] })}\n\n",
+      "data: #{JSON.generate({ choices: [], usage: { prompt_tokens: 30, completion_tokens: 12, total_tokens: 42 } })}\n\n",
+      "data: [DONE]\n\n"
+    ].join
+
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(status: 200, body: body, headers: { "Content-Type" => "text/event-stream" })
+
+    result = @provider.chat(@conversation)
+    assert_equal({ input: 30, output: 12 }, result[:usage])
+  end
+
+  def test_chat_requests_usage_in_stream
+    stub_openai_stream("hi")
+
+    @provider.chat(@conversation)
+
+    assert_requested(:post, "https://api.openai.com/v1/chat/completions") do |req|
+      JSON.parse(req.body).dig("stream_options", "include_usage") == true
+    end
+  end
+
   private
 
   def stub_openai_stream(text)

@@ -38,7 +38,10 @@ module Yorishiro
           "anthropic-version" => API_VERSION
         }
 
-        post_stream(uri, headers: headers, body: body, &)
+        @last_usage = {}
+        result = post_stream(uri, headers: headers, body: body, &)
+        result[:usage] = @last_usage
+        result
       end
 
       private
@@ -93,6 +96,14 @@ module Yorishiro
         end
       end
 
+      # input_tokens arrives on message_start, output_tokens on message_delta.
+      def capture_usage(data)
+        input = data.dig("message", "usage", "input_tokens")
+        output = data.dig("usage", "output_tokens")
+        @last_usage[:input] = input if input
+        @last_usage[:output] = output if output
+      end
+
       def parse_stream(response, tool_calls:, &block)
         buffer = +""
         current_tool_call = nil
@@ -105,6 +116,8 @@ module Yorishiro
             next unless parsed[:data]
 
             case parsed[:event] || parsed[:data]["type"]
+            when "message_start", "message_delta"
+              capture_usage(parsed[:data])
             when "content_block_start"
               content_block = parsed[:data]["content_block"]
               if content_block && content_block["type"] == "tool_use"
