@@ -26,7 +26,8 @@ module Yorishiro
         body = {
           model: @model_name,
           messages: format_messages(conversation.to_api_messages),
-          stream: true
+          stream: true,
+          stream_options: { include_usage: true }
         }
         body[:tools] = format_tools(tools) unless tools.empty?
 
@@ -35,7 +36,10 @@ module Yorishiro
           "Authorization" => "Bearer #{@api_key}"
         }
 
-        post_stream(uri, headers: headers, body: body, &)
+        @last_usage = {}
+        result = post_stream(uri, headers: headers, body: body, &)
+        result[:usage] = @last_usage
+        result
       end
 
       private
@@ -85,6 +89,16 @@ module Yorishiro
         end
       end
 
+      # A trailing usage-only chunk (with an empty choices array) carries the
+      # token counts when stream_options.include_usage is set.
+      def capture_usage(data)
+        usage = data["usage"]
+        return unless usage
+
+        @last_usage[:input] = usage["prompt_tokens"]
+        @last_usage[:output] = usage["completion_tokens"]
+      end
+
       def parse_stream(response, tool_calls:, &block)
         buffer = +""
         tool_call_buffers = {}
@@ -95,6 +109,8 @@ module Yorishiro
             event_str = buffer.slice!(0, idx + 2)
             parsed = parse_sse_event(event_str)
             next unless parsed[:data]
+
+            capture_usage(parsed[:data])
 
             choice = parsed[:data].dig("choices", 0)
             next unless choice

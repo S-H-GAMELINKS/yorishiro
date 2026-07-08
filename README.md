@@ -102,6 +102,7 @@ A session can only be open in one process at a time. If you resume a session tha
 | `/resume` | List saved sessions and resume one |
 | `/tools` | List registered tools |
 | `/skills` | List registered skills |
+| `/usage` | Show token usage for the last turn and the session |
 | `/exit` | Exit yorishiro |
 | `/help` | Show help |
 
