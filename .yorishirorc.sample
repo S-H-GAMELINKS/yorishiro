@@ -59,6 +59,7 @@ allow_tool Yorishiro::Tools::Grep.new
 # Command execution (pattern-based permission)
 # Commands matching allow_commands patterns run automatically.
 # Other commands prompt for permission: [y] once, [a] always, [n] deny.
+# Commands containing shell metacharacters (; & | $ ` < > ( ) or newlines) always prompt.
 allow_tool Yorishiro::Tools::ExecuteCommand.new,
   allow_commands: [
     "ls *",

