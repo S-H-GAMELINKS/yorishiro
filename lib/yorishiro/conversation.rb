@@ -110,6 +110,31 @@ module Yorishiro
       old.length
     end
 
+    ELIDED_TOOL_RESULT = "[Old tool result removed to free context. Re-run the tool if the output is needed again.]"
+
+    # Replace the contents of the oldest tool results with a short
+    # placeholder until the conversation fits within +max_tokens+, keeping
+    # the most recent +keep_recent+ tool results verbatim. Unlike
+    # trim_to_budget!, this frees space inside a single round — a long tool
+    # loop after one user message — where whole-round trimming cannot drop
+    # anything. Message structure is preserved, so an assistant tool_call is
+    # never left without its result. Returns the number of results elided.
+    def elide_old_tool_results!(max_tokens:, keep_recent: 2)
+      tool_indices = @messages.each_index.select { |i| @messages[i][:role] == :tool }
+      candidates = keep_recent.positive? ? tool_indices[0...-keep_recent] : tool_indices
+      elided = 0
+
+      (candidates || []).each do |index|
+        break if estimated_tokens <= max_tokens
+        next if @messages[index][:content] == ELIDED_TOOL_RESULT
+
+        @messages[index][:content] = ELIDED_TOOL_RESULT
+        elided += 1
+      end
+
+      elided
+    end
+
     # Drop the oldest conversation rounds until the estimated size fits within
     # +max_tokens+. A "round" starts at a :user message and includes the
     # assistant reply and any tool results that follow, so whole rounds are
