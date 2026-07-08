@@ -36,6 +36,50 @@ class TestConversation < Minitest::Test
     assert_equal "tc_1", @conversation.messages.last[:tool_call_id]
   end
 
+  def test_elide_old_tool_results_frees_space_within_a_single_round
+    build_single_round_with_tool_results(count: 4, size: 400)
+
+    elided = @conversation.elide_old_tool_results!(max_tokens: 200)
+
+    assert_equal 2, elided # all but the 2 most recent
+    assert_equal Yorishiro::Conversation::ELIDED_TOOL_RESULT, @conversation.messages[2][:content]
+    assert_equal Yorishiro::Conversation::ELIDED_TOOL_RESULT, @conversation.messages[3][:content]
+    assert_includes @conversation.messages[4][:content], "result 2"
+    assert_includes @conversation.messages[5][:content], "result 3"
+    assert_equal "tc_0", @conversation.messages[2][:tool_call_id] # structure preserved
+    assert_equal 6, @conversation.length
+  end
+
+  def test_elide_old_tool_results_stops_once_under_budget
+    build_single_round_with_tool_results(count: 4, size: 400)
+
+    # Pick a budget that exactly one elision satisfies: current usage minus
+    # the tokens a single elision frees, plus a small margin.
+    chars_per_token = Yorishiro::Conversation::CHARS_PER_TOKEN
+    freed = (@conversation.messages[2][:content].length - Yorishiro::Conversation::ELIDED_TOOL_RESULT.length) / chars_per_token
+    budget = @conversation.estimated_tokens - freed + 5
+
+    elided = @conversation.elide_old_tool_results!(max_tokens: budget)
+
+    assert_equal 1, elided
+    assert_includes @conversation.messages[3][:content], "result 1"
+  end
+
+  def test_elide_old_tool_results_noop_when_under_budget
+    build_single_round_with_tool_results(count: 4, size: 10)
+
+    assert_equal 0, @conversation.elide_old_tool_results!(max_tokens: 10_000)
+  end
+
+  def test_elide_old_tool_results_does_not_recount_already_elided
+    build_single_round_with_tool_results(count: 4, size: 400)
+
+    @conversation.elide_old_tool_results!(max_tokens: 1)
+    second = @conversation.elide_old_tool_results!(max_tokens: 1)
+
+    assert_equal 0, second
+  end
+
   def test_serializable_messages_returns_detached_copy
     @conversation.add_message(:user, "hello")
 
@@ -222,5 +266,17 @@ class TestConversation < Minitest::Test
 
     assert_equal 3, removed # first round: user + assistant(tool_call) + tool result
     refute(@conversation.messages.any? { |m| m[:role] == :tool })
+  end
+
+  private
+
+  # One user round with an assistant tool_call turn and +count+ tool
+  # results of roughly +size+ characters each — the shape that used to be
+  # untrimmable (trim keeps the latest round, compact needs older rounds).
+  def build_single_round_with_tool_results(count:, size:)
+    @conversation.add_message(:user, "implement the feature")
+    tool_calls = (0...count).map { |i| { id: "tc_#{i}", name: "read_file", arguments: {} } }
+    @conversation.add_message(:assistant, "", tool_calls: tool_calls)
+    count.times { |i| @conversation.add_tool_result(tool_call_id: "tc_#{i}", content: "result #{i} #{"x" * size}") }
   end
 end

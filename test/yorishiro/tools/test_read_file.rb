@@ -65,4 +65,65 @@ class TestReadFile < Minitest::Test
   def test_execute_file_not_found
     assert_raises(RuntimeError) { @tool.execute(path: "/nonexistent/file.txt") }
   end
+
+  def test_execute_small_file_has_no_paging_notice
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "test.txt")
+      File.write(path, "line 1\nline 2\n")
+
+      result = @tool.execute(path: path)
+      refute_includes result, "Use offset/limit"
+    end
+  end
+
+  def test_execute_caps_lines_by_default_with_paging_notice
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "big.txt")
+      File.write(path, (1..300).map { |i| "line #{i}" }.join("\n"))
+
+      result = @tool.execute(path: path)
+
+      assert_includes result, "200: line 200"
+      refute_includes result, "line 201"
+      assert_includes result, "file has 300 lines; showing 1-200"
+      assert_includes result, "Use offset/limit"
+    end
+  end
+
+  def test_execute_clamps_explicit_limit_to_max_lines
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "big.txt")
+      File.write(path, (1..300).map { |i| "line #{i}" }.join("\n"))
+
+      result = @tool.execute(path: path, limit: 5000)
+
+      refute_includes result, "line 201"
+      assert_includes result, "file has 300 lines"
+    end
+  end
+
+  def test_execute_pages_with_offset
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "big.txt")
+      File.write(path, (1..300).map { |i| "line #{i}" }.join("\n"))
+
+      result = @tool.execute(path: path, offset: 200)
+
+      assert_includes result, "201: line 201"
+      assert_includes result, "300: line 300"
+      refute_includes result, "Use offset/limit" # last page, nothing left
+    end
+  end
+
+  def test_execute_truncates_very_long_lines
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "wide.txt")
+      File.write(path, "short\n#{"x" * 900}\n")
+
+      result = @tool.execute(path: path)
+
+      assert_includes result, "(line truncated)"
+      refute_includes result, "x" * 501
+    end
+  end
 end

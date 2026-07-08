@@ -498,6 +498,73 @@ class TestCLI < Minitest::Test
     Yorishiro.reset!
   end
 
+  def test_run_tool_caps_oversized_output
+    Yorishiro.reset!
+    big_tool = Class.new(Yorishiro::Tool) do
+      def name = "big_tool"
+      def description = "returns a huge output"
+      def parameters = { type: "object" }
+      def execute(**_params) = "y" * 5_000
+    end.new
+    conv = Yorishiro::Conversation.new
+    @cli.instance_variable_set(:@conversation, conv)
+    @cli.instance_variable_set(:@provider, FakeProvider.new(budget: 100)) # floor: MIN_TOOL_RESULT_CHARS
+
+    @cli.send(:run_tool, big_tool, { id: "1", name: "big_tool", arguments: {} })
+
+    content = conv.messages.last[:content]
+    assert_operator content.length, :<, 2_500
+    assert_includes content, "tool output truncated"
+    assert_includes content, "5000 characters"
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_run_tool_leaves_small_output_untouched
+    Yorishiro.reset!
+    conv = Yorishiro::Conversation.new
+    @cli.instance_variable_set(:@conversation, conv)
+    @cli.instance_variable_set(:@provider, FakeProvider.new(budget: 100))
+    tool = RecordingTool.new
+
+    simulate_input("y") do
+      @cli.send(:run_tool, tool, { id: "1", name: "recording_tool", arguments: {} })
+    end
+
+    assert_equal "recorded ok", conv.messages.last[:content]
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_max_tool_result_chars_scales_with_budget
+    @cli.instance_variable_set(:@provider, FakeProvider.new(budget: 8000))
+    assert_equal 8000, @cli.send(:max_tool_result_chars) # 8000 tokens * 4 chars/token / 4
+
+    @cli.instance_variable_set(:@provider, FakeProvider.new(budget: nil))
+    assert_equal 30_000, @cli.send(:max_tool_result_chars)
+  end
+
+  def test_manage_context_elides_tool_results_within_a_single_round
+    Yorishiro.reset!
+    Yorishiro.configuration.auto_compact(false)
+    conv = Yorishiro::Conversation.new
+    conv.add_message(:user, "implement the feature")
+    tool_calls = (0...4).map { |i| { id: "tc_#{i}", name: "read_file", arguments: {} } }
+    conv.add_message(:assistant, "", tool_calls: tool_calls)
+    4.times { |i| conv.add_tool_result(tool_call_id: "tc_#{i}", content: "r#{i} #{"x" * 800}") }
+    @cli.instance_variable_set(:@conversation, conv)
+    @cli.instance_variable_set(:@provider, FakeProvider.new(budget: 400))
+
+    @cli.send(:manage_context!)
+
+    assert_includes @output.string, "Removed 2 old tool result(s)"
+    assert_equal 6, conv.length # no rounds were dropped — space was freed in place
+    assert_equal Yorishiro::Conversation::ELIDED_TOOL_RESULT, conv.messages[2][:content]
+    assert_includes conv.messages[5][:content], "r3" # most recent results kept
+  ensure
+    Yorishiro.reset!
+  end
+
   def test_skill_returning_string_prints_output
     Yorishiro.reset!
     Yorishiro.configuration.skill(PrintingSkill.new)

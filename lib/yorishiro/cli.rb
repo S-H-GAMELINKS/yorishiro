@@ -8,6 +8,11 @@ module Yorishiro
     # Fraction of the context budget at which auto-compaction kicks in.
     COMPACT_THRESHOLD = 0.8
 
+    # Tool-result size caps used when the provider reports no context
+    # budget (cloud models) and as the floor when it does.
+    DEFAULT_TOOL_RESULT_CHARS = 30_000
+    MIN_TOOL_RESULT_CHARS = 2_000
+
     def initialize
       @conversation = nil
       @provider = nil
@@ -195,14 +200,19 @@ module Yorishiro
       result
     end
 
-    # Auto-compact (summarize old history) when nearing the budget, then apply a
-    # mechanical trim as a fallback for anything still over the limit (e.g. a
-    # single oversized round, or when summarization failed).
+    # Keep the conversation inside the budget in three escalating steps:
+    # summarize old rounds (auto-compact), then blank out old tool results —
+    # the only thing that can shrink a single long tool loop, where round
+    # trimming and compaction have nothing to drop — and finally trim whole
+    # rounds as the last resort.
     def manage_context!
       budget = @provider.context_budget_tokens
       return unless budget
 
       auto_compact_if_needed(budget)
+
+      elided = @conversation.elide_old_tool_results!(max_tokens: budget)
+      @output.puts "[i] Removed #{elided} old tool result(s) to stay within the context limit." if elided.positive?
 
       removed = @conversation.trim_to_budget!(max_tokens: budget)
       @output.puts "[i] Dropped #{removed} old message(s) to stay within the context limit." if removed.positive?
@@ -353,12 +363,31 @@ module Yorishiro
       @output.puts "[Tool] Executing: #{tool_call[:name]}(#{format_args(tool_call[:arguments])})"
       output = tool.execute(**symbolize_keys(tool_call[:arguments]))
       @output.puts "[Tool] Result: #{truncate(output, 200)}"
-      @conversation.add_tool_result(tool_call_id: tool_call[:id], content: output)
-      run_after_hooks(tool_call, output)
+      @conversation.add_tool_result(tool_call_id: tool_call[:id], content: cap_tool_result(output))
+      run_after_hooks(tool_call, output) # hooks (e.g. audit logs) see the full output
     rescue StandardError => e
       error_msg = "Error: #{e.message}"
       @output.puts "[Tool] #{error_msg}"
       @conversation.add_tool_result(tool_call_id: tool_call[:id], content: error_msg)
+    end
+
+    # Cap a tool result before it enters the conversation so a single huge
+    # output (a whole file, a big command dump) cannot exhaust a small
+    # context window. Scaled to the provider budget when one is known.
+    def cap_tool_result(output)
+      limit = max_tool_result_chars
+      return output if output.to_s.length <= limit
+
+      "#{output[0...limit]}\n... (tool output truncated: showing #{limit} of #{output.length} characters. " \
+        "Narrow the request — offset/limit, a glob, or a more specific pattern — to see the rest.)"
+    end
+
+    # One tool result may take at most a quarter of the context budget.
+    def max_tool_result_chars
+      budget = @provider&.context_budget_tokens
+      return DEFAULT_TOOL_RESULT_CHARS unless budget
+
+      [budget * Conversation::CHARS_PER_TOKEN / 4, MIN_TOOL_RESULT_CHARS].max
     end
 
     # after hooks are observational: a failure is warned about but never
