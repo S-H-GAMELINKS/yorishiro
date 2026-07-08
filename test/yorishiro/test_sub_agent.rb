@@ -25,6 +25,28 @@ class TestSubAgent < Minitest::Test
     end
   end
 
+  # Returns scripted responses but raises on a chosen chat call, to
+  # simulate a provider/API failure mid-loop.
+  class ExplodingProvider
+    attr_reader :chat_calls
+
+    def initialize(responses, raise_on:, error: RuntimeError.new("provider boom"))
+      @responses = responses
+      @raise_on = raise_on
+      @error = error
+      @chat_calls = 0
+    end
+
+    def context_budget_tokens = nil
+
+    def chat(_conversation, tools: [], &) # rubocop:disable Lint/UnusedMethodArgument
+      @chat_calls += 1
+      raise @error if @chat_calls == @raise_on
+
+      @responses.shift
+    end
+  end
+
   class EchoTool < Yorishiro::Tool
     attr_reader :calls
 
@@ -179,6 +201,25 @@ class TestSubAgent < Minitest::Test
     result = build_sub_agent(provider, [EchoTool.new]).run("investigate")
 
     assert_equal "The subagent returned no findings.", result
+  end
+
+  def test_provider_error_after_progress_returns_partial_findings
+    provider = ExplodingProvider.new([ECHO_CALL.merge(content: "partial findings")], raise_on: 2)
+
+    result = build_sub_agent(provider, [EchoTool.new]).run("investigate")
+
+    assert_includes result, "partial findings"
+    assert_includes result, "provider error"
+    assert_includes result, "provider boom"
+  end
+
+  def test_provider_error_on_first_call_returns_notice
+    provider = ExplodingProvider.new([], raise_on: 1, error: RuntimeError.new("429 rate limited"))
+
+    result = build_sub_agent(provider, [EchoTool.new]).run("investigate")
+
+    assert_includes result, "provider error"
+    assert_includes result, "429 rate limited"
   end
 
   def test_manages_context_by_eliding_old_tool_results

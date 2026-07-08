@@ -35,7 +35,13 @@ module Yorishiro
       @max_iterations.times do |iteration|
         manage_context!(conversation)
 
-        result = @provider.chat(conversation, tools: @tools.map(&:definition))
+        begin
+          result = @provider.chat(conversation, tools: @tools.map(&:definition))
+        rescue StandardError => e
+          # A failed completion must not throw away the investigation done so
+          # far — salvage it the same way the iteration limit does.
+          return provider_error_notice(last_content, e)
+        end
         content = result[:content]
         tool_calls = result[:tool_calls]
 
@@ -73,6 +79,11 @@ module Yorishiro
 
     def iteration_limit_notice(last_content)
       notice = "[Subagent reached the #{@max_iterations}-iteration limit without a final answer.]"
+      last_content ? "#{last_content}\n\n#{notice}" : notice
+    end
+
+    def provider_error_notice(last_content, error)
+      notice = "[Subagent stopped early after a provider error: #{error.message}]"
       last_content ? "#{last_content}\n\n#{notice}" : notice
     end
 
