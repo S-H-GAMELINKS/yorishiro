@@ -26,6 +26,20 @@ module Yorishiro
       @model = model
     end
 
+    # Switch provider/model at runtime (e.g. the /model command). Re-validates
+    # and rolls back to the previous settings if the new combination is
+    # invalid, so a rejected switch never leaves the config half-changed.
+    def switch!(provider:, model:, api_key:)
+      previous = [@provider_name, @api_key, @model]
+      @provider_name = provider
+      @api_key = api_key
+      @model = model
+      validate!
+    rescue ConfigurationError
+      @provider_name, @api_key, @model = previous
+      raise
+    end
+
     def allow_tool(tool, **options)
       tool.configure(options) if tool.respond_to?(:configure)
       @allowed_tools << tool

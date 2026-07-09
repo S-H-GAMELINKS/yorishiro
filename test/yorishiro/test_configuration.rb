@@ -127,6 +127,36 @@ class TestConfiguration < Minitest::Test
     assert_equal "claude-sonnet-4-20250514", @config.model
   end
 
+  def test_switch_changes_model_and_keeps_api_key
+    @config.use(provider: :anthropic, api_key: "test-key", model: "claude-sonnet-4-20250514")
+
+    @config.switch!(provider: :anthropic, model: "claude-3-5-haiku-20241022", api_key: @config.api_key)
+
+    assert_equal "claude-3-5-haiku-20241022", @config.model
+    assert_equal "test-key", @config.api_key
+  end
+
+  def test_switch_rolls_back_on_unsupported_model
+    @config.use(provider: :anthropic, api_key: "test-key", model: "claude-sonnet-4-20250514")
+
+    assert_raises(Yorishiro::ConfigurationError) do
+      @config.switch!(provider: :anthropic, model: "bogus-model", api_key: "test-key")
+    end
+
+    assert_equal "claude-sonnet-4-20250514", @config.model # unchanged
+  end
+
+  def test_switch_rolls_back_on_missing_api_key
+    @config.use(provider: :anthropic, api_key: "test-key", model: "claude-sonnet-4-20250514")
+
+    assert_raises(Yorishiro::ConfigurationError) do
+      @config.switch!(provider: :open_ai, model: "gpt-4o", api_key: nil)
+    end
+
+    assert_equal :anthropic, @config.provider_name # unchanged
+    assert_equal "test-key", @config.api_key
+  end
+
   def test_find_tool
     tool = Yorishiro::Tools::ReadFile.new
     @config.allow_tool(tool)

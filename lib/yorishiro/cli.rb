@@ -8,6 +8,10 @@ module Yorishiro
     # Fraction of the context budget at which auto-compaction kicks in.
     COMPACT_THRESHOLD = 0.8
 
+    # Env vars the /model command reads an API key from when switching to a
+    # different provider. Ollama needs none.
+    API_KEY_ENV = { anthropic: "ANTHROPIC_API_KEY", open_ai: "OPENAI_API_KEY" }.freeze
+
     def initialize
       @conversation = nil
       @provider = nil
@@ -503,6 +507,8 @@ module Yorishiro
         list_skills
       when "/usage"
         print_usage
+      when "/model"
+        switch_model(args)
       when "/exit", "/quit"
         @output.puts "Goodbye!"
         exit
@@ -527,6 +533,55 @@ module Yorishiro
       when String
         @output.puts result
       end
+    end
+
+    # /model            -> list current + available models
+    # /model <name>     -> switch model within the current provider
+    # /model <prov> <m> -> switch provider and model
+    def switch_model(args)
+      case args.length
+      when 0
+        show_model_options
+      when 1
+        apply_model_switch(provider: Yorishiro.configuration.provider_name, model: args[0])
+      else
+        apply_model_switch(provider: args[0].to_sym, model: args[1])
+      end
+    end
+
+    def apply_model_switch(provider:, model:)
+      config = Yorishiro.configuration
+      config.switch!(provider: provider, model: model, api_key: resolve_api_key(provider))
+      @provider = Provider.build(config)
+      attach_tools! # re-point subagent tools at the new provider
+      @output.puts "Now using #{config.provider_name}:#{@provider.model_name}"
+    rescue Yorishiro::ConfigurationError => e
+      @output.puts "[!] #{e.message}"
+    end
+
+    # Reuse the existing key when the provider is unchanged; otherwise read it
+    # from the provider's conventional env var (nil for Ollama, which needs none).
+    def resolve_api_key(provider)
+      config = Yorishiro.configuration
+      return config.api_key if provider == config.provider_name
+
+      env = API_KEY_ENV[provider]
+      env && ENV.fetch(env, nil)
+    end
+
+    def show_model_options
+      config = Yorishiro.configuration
+      @output.puts "Current: #{config.provider_name}:#{@provider.model_name}"
+
+      models = Provider.for(config.provider_name).supported_models
+      if models.empty?
+        @output.puts "  (no model list available for #{config.provider_name})"
+      else
+        models.each { |m| @output.puts "  #{m}" }
+      end
+      @output.puts "Usage: /model <name>  |  /model <provider> <name>"
+    rescue Yorishiro::ProviderNotImplementedError => e
+      @output.puts "[!] #{e.message}"
     end
 
     def clear_conversation!
@@ -590,6 +645,7 @@ module Yorishiro
           /tools    - List available tools
           /skills   - List available skills
           /usage    - Show token usage
+          /model    - Switch provider/model (list when no args)
           /exit     - Exit yorishiro
           /help     - Show this help
       HELP
