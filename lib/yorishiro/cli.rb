@@ -73,8 +73,7 @@ module Yorishiro
       config = Yorishiro.configuration
       config.load!
 
-      config.use(provider: @cli_opts[:provider]) if @cli_opts[:provider]
-      config.instance_variable_set(:@model, @cli_opts[:model]) if @cli_opts[:model]
+      apply_cli_overrides!(config)
 
       @provider = Provider.build(config)
       attach_tools!
@@ -93,6 +92,21 @@ module Yorishiro
       @session_store = SessionStore.new
       @session_id = nil
       resume_from_options!
+    end
+
+    # Route --provider/--model through switch! so the override is validated
+    # (and rolled back on failure) instead of wiping the rc file's api_key
+    # and model the way a bare use(provider:) would. Changing provider reads
+    # the key from that provider's env var and drops the rc model, which
+    # belongs to the old provider; --model alone keeps both.
+    def apply_cli_overrides!(config)
+      provider = @cli_opts[:provider]
+      model = @cli_opts[:model]
+      return unless provider || model
+
+      provider ||= config.provider_name
+      model ||= config.model if provider == config.provider_name
+      config.switch!(provider: provider, model: model, api_key: resolve_api_key(provider))
     end
 
     # Hand the session's provider and output to tools that spawn their own
