@@ -652,6 +652,51 @@ class TestCLI < Minitest::Test
     Yorishiro.reset!
   end
 
+  def test_model_command_switches_model
+    Yorishiro.reset!
+    stub_request(:get, "http://localhost:11434/api/tags")
+      .to_return(status: 200, body: '{"models":[{"name":"gemma3:4b"},{"name":"llama3.1"}]}')
+    Yorishiro.configuration.use(provider: :ollama, model: "llama3.1")
+    @cli.instance_variable_set(:@provider, Yorishiro::Provider.build(Yorishiro.configuration))
+
+    @cli.send(:handle_slash_command, "/model gemma3:4b")
+
+    assert_equal "gemma3:4b", @cli.instance_variable_get(:@provider).model_name
+    assert_includes @output.string, "Now using ollama:gemma3:4b"
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_model_command_lists_options
+    Yorishiro.reset!
+    stub_request(:get, "http://localhost:11434/api/tags")
+      .to_return(status: 200, body: '{"models":[{"name":"gemma3:4b"},{"name":"llama3.1"}]}')
+    Yorishiro.configuration.use(provider: :ollama, model: "llama3.1")
+    @cli.instance_variable_set(:@provider, Yorishiro::Provider.build(Yorishiro.configuration))
+
+    @cli.send(:handle_slash_command, "/model")
+
+    assert_includes @output.string, "Current: ollama:llama3.1"
+    assert_includes @output.string, "gemma3:4b"
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_model_command_rejects_unknown_model
+    Yorishiro.reset!
+    stub_request(:get, "http://localhost:11434/api/tags")
+      .to_return(status: 200, body: '{"models":[{"name":"llama3.1"}]}')
+    Yorishiro.configuration.use(provider: :ollama, model: "llama3.1")
+    @cli.instance_variable_set(:@provider, Yorishiro::Provider.build(Yorishiro.configuration))
+
+    @cli.send(:handle_slash_command, "/model nonexistent")
+
+    assert_includes @output.string, "[!]"
+    assert_equal "llama3.1", @cli.instance_variable_get(:@provider).model_name # unchanged
+  ensure
+    Yorishiro.reset!
+  end
+
   private
 
   def setup_session_cli(store)

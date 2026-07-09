@@ -103,8 +103,11 @@ A session can only be open in one process at a time. If you resume a session tha
 | `/tools` | List registered tools |
 | `/skills` | List registered skills |
 | `/usage` | Show token usage for the last turn and the session |
+| `/model` | Switch provider/model at runtime (lists options when called with no arguments) |
 | `/exit` | Exit yorishiro |
 | `/help` | Show help |
+
+`/model gpt-4o` switches the model within the current provider; `/model open_ai gpt-4o` also switches provider. When switching to a different provider, the API key is read from that provider's conventional environment variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`; Ollama needs none) — the switch is rejected and the current model kept if the key or model is invalid.
 
 ### CLI Options
 
