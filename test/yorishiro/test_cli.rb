@@ -37,6 +37,11 @@ class TestCLI < Minitest::Test
     end
   end
 
+  class ReadOnlyRecordingTool < RecordingTool
+    def name = "read_only_recording_tool"
+    def read_only? = true
+  end
+
   class FakeProvider
     attr_accessor :budget
     attr_reader :chat_calls
@@ -769,6 +774,66 @@ class TestCLI < Minitest::Test
     assert_equal :anthropic, config.provider_name
     assert_equal "sk-from-rc", config.api_key
     assert_equal "claude-sonnet-4-20250514", config.model
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_plan_mode_blocks_non_read_only_tool_without_executing_it
+    Yorishiro.reset!
+    tool = RecordingTool.new # read_only? is false, permission_check is :ask
+    Yorishiro.configuration.allow_tool(tool)
+    conv = Yorishiro::Conversation.new
+    @cli.instance_variable_set(:@conversation, conv)
+
+    @cli.send(:execute_read_only_tool_calls, [{ id: "tc_1", name: "recording_tool", arguments: {} }])
+
+    refute tool.executed, "non-read-only tool must not run in plan mode"
+    result = conv.messages.last
+    assert_equal :tool, result[:role]
+    assert_equal "tc_1", result[:tool_call_id]
+    assert_includes result[:content], "not available in plan mode"
+    assert_includes @output.string, "[Plan Mode] Blocked non-read-only tool: recording_tool"
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_plan_mode_executes_read_only_tool_without_permission_prompt
+    Yorishiro.reset!
+    tool = ReadOnlyRecordingTool.new # permission_check is :ask, but plan mode runs it inline
+    Yorishiro.configuration.allow_tool(tool)
+    conv = Yorishiro::Conversation.new
+    @cli.instance_variable_set(:@conversation, conv)
+
+    @cli.send(:execute_read_only_tool_calls, [{ id: "tc_1", name: "read_only_recording_tool", arguments: {} }])
+
+    assert tool.executed
+    result = conv.messages.last
+    assert_equal :tool, result[:role]
+    assert_equal "recorded ok", result[:content]
+    refute_includes @output.string, "[Permission]"
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_plan_mode_blocked_tool_still_reports_result_for_every_call
+    Yorishiro.reset!
+    write_tool = RecordingTool.new
+    read_tool = ReadOnlyRecordingTool.new
+    Yorishiro.configuration.allow_tool(write_tool)
+    Yorishiro.configuration.allow_tool(read_tool)
+    conv = Yorishiro::Conversation.new
+    @cli.instance_variable_set(:@conversation, conv)
+
+    @cli.send(:execute_read_only_tool_calls, [
+                { id: "tc_1", name: "recording_tool", arguments: {} },
+                { id: "tc_2", name: "read_only_recording_tool", arguments: {} }
+              ])
+
+    # Both calls got a tool result, so no assistant tool_call is left dangling.
+    result_ids = conv.messages.select { |m| m[:role] == :tool }.map { |m| m[:tool_call_id] }
+    assert_equal %w[tc_1 tc_2], result_ids
+    refute write_tool.executed
+    assert read_tool.executed
   ensure
     Yorishiro.reset!
   end

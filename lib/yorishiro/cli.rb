@@ -329,12 +329,25 @@ module Yorishiro
 
     # Run plan-mode read-only tool calls inline (no permission prompt).
     # before/after hooks still apply, so a policy denial is enforced in
-    # plan mode too.
+    # plan mode too. Only the read-only tool definitions are offered in
+    # plan mode, but the model can still name any registered tool — so a
+    # non-read-only call must be refused here, or it would run without
+    # the permission prompt the normal loop enforces.
     def execute_read_only_tool_calls(tool_calls)
       tool_calls.each do |tc|
         tool = Yorishiro.configuration.find_tool(tc[:name])
         unless tool
           @conversation.add_tool_result(tool_call_id: tc[:id], content: "Error: Unknown tool '#{tc[:name]}'")
+          next
+        end
+
+        unless tool.read_only?
+          @output.puts "[Plan Mode] Blocked non-read-only tool: #{tc[:name]}"
+          @conversation.add_tool_result(
+            tool_call_id: tc[:id],
+            content: "Error: '#{tc[:name]}' is not available in plan mode — only read-only tools can be used " \
+                     "while planning. Include this step in the plan and call exit_plan_mode when it is ready."
+          )
           next
         end
 
