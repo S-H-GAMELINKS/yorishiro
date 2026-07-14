@@ -61,6 +61,20 @@ class TestCLI < Minitest::Test
     end
   end
 
+  class ScriptedProvider
+    def initialize(*results)
+      @results = results
+    end
+
+    def context_budget_tokens = nil
+
+    def model_name = "scripted-model"
+
+    def chat(_conversation, tools: [], &) # rubocop:disable Lint/UnusedMethodArgument
+      @results.shift || { content: "done", tool_calls: [] }
+    end
+  end
+
   class RaisingProvider < Yorishiro::Provider::Base
     def self.supported_models = ["x"]
     def chat(*_args, **_kwargs) = raise Yorishiro::ProviderError, "boom"
@@ -880,6 +894,37 @@ class TestCLI < Minitest::Test
     assert_equal %w[tc_1 tc_2], result_ids
     refute write_tool.executed
     assert read_tool.executed
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_plan_mode_records_results_for_siblings_of_exit_plan_mode
+    Yorishiro.reset!
+    read_tool = ReadOnlyRecordingTool.new
+    Yorishiro.configuration.allow_tool(read_tool)
+    conv = Yorishiro::Conversation.new
+    @cli.instance_variable_set(:@conversation, conv)
+    @cli.instance_variable_set(:@provider, ScriptedProvider.new(
+                                             { content: "", tool_calls: [
+                                               { id: "tc_read", name: "read_only_recording_tool", arguments: {} },
+                                               { id: "tc_exit", name: "exit_plan_mode",
+                                                 arguments: { "plan" => "1. Do the thing" } }
+                                             ] }
+                                           ))
+
+    simulate_input("n") do
+      @cli.send(:plan_then_execute)
+    end
+
+    # Every tool call got a result, so no assistant tool_call dangles when
+    # the follow-up completion sends the history back to the provider.
+    tool_results = conv.messages.select { |m| m[:role] == :tool }
+    assert_equal %w[tc_exit tc_read], tool_results.map { |m| m[:tool_call_id] }.sort
+    refute read_tool.executed, "siblings of exit_plan_mode must not run"
+    skipped = tool_results.find { |m| m[:tool_call_id] == "tc_read" }
+    assert_includes skipped[:content], "Skipped"
+    assert_includes @output.string, "1. Do the thing"
+    assert_includes @output.string, "Plan execution cancelled."
   ensure
     Yorishiro.reset!
   end
