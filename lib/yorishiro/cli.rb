@@ -130,13 +130,16 @@ module Yorishiro
         break if input.nil?
         next if input.strip.empty?
 
-        if input.strip.start_with?("/")
-          handle_slash_command(input.strip)
-          next
-        end
-
+        # Slash commands share the error handling: a skill can raise or
+        # inject a prompt that runs the full agent loop, and neither may
+        # take down the REPL. /exit still works — SystemExit is not a
+        # StandardError.
         begin
-          process_user_input(input)
+          if input.strip.start_with?("/")
+            handle_slash_command(input.strip)
+          else
+            process_user_input(input)
+          end
         rescue Yorishiro::ProviderError => e
           @output.puts "\n[Error] #{e.message}"
         rescue StandardError => e

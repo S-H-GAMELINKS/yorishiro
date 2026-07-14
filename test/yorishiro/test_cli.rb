@@ -82,6 +82,12 @@ class TestCLI < Minitest::Test
     def execute(_context) = prompt("please review")
   end
 
+  class RaisingSkill < Yorishiro::Skill
+    def name = "boom"
+    def description = "always raises"
+    def execute(_context) = raise "skill exploded"
+  end
+
   def setup
     @output = StringIO.new
     @cli = Yorishiro::CLI.new
@@ -322,6 +328,46 @@ class TestCLI < Minitest::Test
 
     assert_includes @output.string, "[Error]"
     assert_includes @output.string, "boom"
+  end
+
+  def test_repl_loop_survives_skill_error
+    Yorishiro.reset!
+    Yorishiro.configuration.skill(RaisingSkill.new)
+    @cli.instance_variable_set(:@conversation, Yorishiro::Conversation.new)
+    @cli.instance_variable_set(:@plan_mode, false)
+
+    inputs = ["/boom", "still alive", nil]
+    reader = -> { inputs.shift }
+    @cli.instance_variable_set(:@provider, FakeProvider.new)
+    @cli.stub(:read_input, reader) do
+      @cli.send(:repl_loop)
+    end
+
+    assert_includes @output.string, "[Error] RuntimeError: skill exploded"
+    # The next input was still processed — the REPL survived the skill error.
+    conv = @cli.instance_variable_get(:@conversation)
+    assert_includes conv.messages.map { |m| m[:content] }, "still alive"
+    assert_equal :assistant, conv.last_role
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_repl_loop_survives_provider_error_from_prompt_skill
+    Yorishiro.reset!
+    Yorishiro.configuration.skill(PromptSkill.new)
+    @cli.instance_variable_set(:@conversation, Yorishiro::Conversation.new)
+    @cli.instance_variable_set(:@plan_mode, false)
+    @cli.instance_variable_set(:@provider, RaisingProvider.new(api_key: "x"))
+
+    inputs = ["/review", nil]
+    reader = -> { inputs.shift }
+    @cli.stub(:read_input, reader) do
+      @cli.send(:repl_loop) # must not raise
+    end
+
+    assert_includes @output.string, "[Error] boom"
+  ensure
+    Yorishiro.reset!
   end
 
   def test_process_user_input_persists_session
