@@ -312,6 +312,7 @@ module Yorishiro
         exit_call = tool_calls.find { |tc| tc[:name] == exit_tool.name }
         if exit_call
           present_plan(exit_call, exit_tool)
+          skip_sibling_tool_calls(tool_calls, exit_call)
           break
         end
 
@@ -357,6 +358,22 @@ module Yorishiro
         next if denied_by_hook?(tc)
 
         run_tool(tool, tc)
+      end
+    end
+
+    # Tool calls issued in the same response as exit_plan_mode are not
+    # executed — the plan is already final — but each still needs a tool
+    # result: an assistant tool_call left unanswered makes Anthropic/OpenAI
+    # reject the follow-up request after the user approves the plan.
+    def skip_sibling_tool_calls(tool_calls, exit_call)
+      tool_calls.each do |tc|
+        next if tc[:id] == exit_call[:id]
+
+        @conversation.add_tool_result(
+          tool_call_id: tc[:id],
+          content: "Skipped: exit_plan_mode was called in the same response, so this tool was not executed. " \
+                   "Run it again after the plan is approved if the result is still needed."
+        )
       end
     end
 
