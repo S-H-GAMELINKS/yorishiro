@@ -32,14 +32,16 @@ module Yorishiro
 
         raise "Directory not found: #{path}" unless Dir.exist?(path)
 
-        if pattern
-          glob_path = File.join(path, pattern)
-          files = Dir.glob(glob_path)
-        else
-          files = Dir.children(path).sort
-        end
+        entries = if pattern
+                    # Glob results already carry the path prefix.
+                    Dir.glob(File.join(path, pattern)).map { |f| [f, f] }
+                  else
+                    # Dir.children returns bare names — resolve them against
+                    # +path+, not the process cwd, when checking for directories.
+                    Dir.children(path).sort.map { |name| [name, File.join(path, name)] }
+                  end
 
-        files.map { |f| File.directory?(f) ? "#{f}/" : f }.join("\n")
+        entries.map { |display, full| File.directory?(full) ? "#{display}/" : display }.join("\n")
       end
     end
   end
