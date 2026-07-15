@@ -45,4 +45,28 @@ class TestListFiles < Minitest::Test
   def test_execute_directory_not_found
     assert_raises(RuntimeError) { @tool.execute(path: "/nonexistent/dir") }
   end
+
+  def test_execute_marks_directories_outside_the_cwd
+    Dir.mktmpdir do |dir|
+      Dir.mkdir(File.join(dir, "sub"))
+      File.write(File.join(dir, "plain.txt"), "")
+
+      # The tool must resolve entries against the listed path, not the
+      # process cwd — "sub" does not exist relative to the test runner's cwd.
+      result = @tool.execute(path: dir).lines(chomp: true)
+      assert_includes result, "sub/"
+      assert_includes result, "plain.txt"
+    end
+  end
+
+  def test_execute_with_pattern_marks_directories
+    Dir.mktmpdir do |dir|
+      Dir.mkdir(File.join(dir, "sub"))
+      File.write(File.join(dir, "plain.txt"), "")
+
+      result = @tool.execute(path: dir, pattern: "*").lines(chomp: true)
+      assert_includes result, "#{File.join(dir, "sub")}/"
+      assert_includes result, File.join(dir, "plain.txt")
+    end
+  end
 end
