@@ -929,6 +929,38 @@ class TestCLI < Minitest::Test
     Yorishiro.reset!
   end
 
+  def test_agent_loop_does_not_record_empty_assistant_response
+    Yorishiro.reset!
+    conv = Yorishiro::Conversation.new
+    conv.add_message(:user, "hello")
+    @cli.instance_variable_set(:@conversation, conv)
+    @cli.instance_variable_set(:@provider, ScriptedProvider.new({ content: "", tool_calls: [] }))
+
+    @cli.send(:agent_loop)
+
+    # The empty completion is warned about but never enters the history —
+    # Anthropic would reject it on every later request.
+    assert_equal([:user], conv.messages.map { |m| m[:role] })
+    assert_includes @output.string, "empty response"
+  ensure
+    Yorishiro.reset!
+  end
+
+  def test_agent_loop_records_normal_assistant_response
+    Yorishiro.reset!
+    conv = Yorishiro::Conversation.new
+    conv.add_message(:user, "hello")
+    @cli.instance_variable_set(:@conversation, conv)
+    @cli.instance_variable_set(:@provider, ScriptedProvider.new({ content: "hi there", tool_calls: [] }))
+
+    @cli.send(:agent_loop)
+
+    assert_equal(%i[user assistant], conv.messages.map { |m| m[:role] })
+    assert_equal "hi there", conv.messages.last[:content]
+  ensure
+    Yorishiro.reset!
+  end
+
   private
 
   def setup_session_cli(store)
