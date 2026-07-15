@@ -6,12 +6,20 @@ module Yorishiro
       API_URL = "https://api.anthropic.com/v1/messages"
       API_VERSION = "2023-06-01"
 
+      # Alias IDs (no date suffix) from Anthropic's model catalog. Aliases
+      # track the latest snapshot of each model, so this list goes stale far
+      # more slowly than the dated IDs it used to hold — but it is still a
+      # snapshot: add new entries here as models are released.
       SUPPORTED_MODELS = %w[
-        claude-opus-4-20250514
-        claude-sonnet-4-20250514
-        claude-haiku-4-20250414
-        claude-3-5-sonnet-20241022
-        claude-3-5-haiku-20241022
+        claude-fable-5
+        claude-opus-4-8
+        claude-opus-4-7
+        claude-opus-4-6
+        claude-opus-4-5
+        claude-sonnet-5
+        claude-sonnet-4-6
+        claude-sonnet-4-5
+        claude-haiku-4-5
       ].freeze
 
       def self.supported_models
@@ -47,7 +55,7 @@ module Yorishiro
       private
 
       def default_model
-        "claude-sonnet-4-20250514"
+        "claude-opus-4-8"
       end
 
       def format_messages(api_messages)

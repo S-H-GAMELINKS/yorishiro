@@ -765,13 +765,13 @@ class TestCLI < Minitest::Test
   def test_provider_option_preserves_rc_api_key_and_model
     Yorishiro.reset!
     config = Yorishiro.configuration
-    config.use(provider: :anthropic, api_key: "sk-from-rc", model: "claude-sonnet-4-20250514")
+    config.use(provider: :anthropic, api_key: "sk-from-rc", model: "claude-opus-4-8")
     @cli.instance_variable_set(:@cli_opts, { provider: :anthropic })
 
     @cli.send(:apply_cli_overrides!, config)
 
     assert_equal "sk-from-rc", config.api_key
-    assert_equal "claude-sonnet-4-20250514", config.model
+    assert_equal "claude-opus-4-8", config.model
   ensure
     Yorishiro.reset!
   end
@@ -779,7 +779,7 @@ class TestCLI < Minitest::Test
   def test_provider_option_switches_provider_reading_env_key
     Yorishiro.reset!
     config = Yorishiro.configuration
-    config.use(provider: :anthropic, api_key: "sk-anthropic", model: "claude-sonnet-4-20250514")
+    config.use(provider: :anthropic, api_key: "sk-anthropic", model: "claude-opus-4-8")
     @cli.instance_variable_set(:@cli_opts, { provider: :open_ai })
     old_key = ENV.fetch("OPENAI_API_KEY", nil)
     ENV["OPENAI_API_KEY"] = "sk-openai"
@@ -798,13 +798,13 @@ class TestCLI < Minitest::Test
     Yorishiro.reset!
     config = Yorishiro.configuration
     config.use(provider: :anthropic, api_key: "sk-from-rc")
-    @cli.instance_variable_set(:@cli_opts, { model: "claude-3-5-haiku-20241022" })
+    @cli.instance_variable_set(:@cli_opts, { model: "claude-haiku-4-5" })
 
     @cli.send(:apply_cli_overrides!, config)
 
     assert_equal :anthropic, config.provider_name
     assert_equal "sk-from-rc", config.api_key
-    assert_equal "claude-3-5-haiku-20241022", config.model
+    assert_equal "claude-haiku-4-5", config.model
   ensure
     Yorishiro.reset!
   end
@@ -812,12 +812,12 @@ class TestCLI < Minitest::Test
   def test_model_option_rejects_unsupported_model_and_rolls_back
     Yorishiro.reset!
     config = Yorishiro.configuration
-    config.use(provider: :anthropic, api_key: "sk-from-rc", model: "claude-sonnet-4-20250514")
+    config.use(provider: :anthropic, api_key: "sk-from-rc", model: "claude-opus-4-8")
     @cli.instance_variable_set(:@cli_opts, { model: "bogus-model" })
 
     assert_raises(Yorishiro::ConfigurationError) { @cli.send(:apply_cli_overrides!, config) }
 
-    assert_equal "claude-sonnet-4-20250514", config.model
+    assert_equal "claude-opus-4-8", config.model
     assert_equal "sk-from-rc", config.api_key
   ensure
     Yorishiro.reset!
@@ -826,14 +826,14 @@ class TestCLI < Minitest::Test
   def test_no_cli_overrides_leaves_configuration_untouched
     Yorishiro.reset!
     config = Yorishiro.configuration
-    config.use(provider: :anthropic, api_key: "sk-from-rc", model: "claude-sonnet-4-20250514")
+    config.use(provider: :anthropic, api_key: "sk-from-rc", model: "claude-opus-4-8")
     @cli.instance_variable_set(:@cli_opts, {})
 
     @cli.send(:apply_cli_overrides!, config)
 
     assert_equal :anthropic, config.provider_name
     assert_equal "sk-from-rc", config.api_key
-    assert_equal "claude-sonnet-4-20250514", config.model
+    assert_equal "claude-opus-4-8", config.model
   ensure
     Yorishiro.reset!
   end

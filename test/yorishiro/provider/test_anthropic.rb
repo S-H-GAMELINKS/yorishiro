@@ -11,12 +11,13 @@ class TestProviderAnthropic < Minitest::Test
 
   def test_supported_models
     models = Yorishiro::Provider::Anthropic.supported_models
-    assert_includes models, "claude-sonnet-4-20250514"
-    assert_includes models, "claude-opus-4-20250514"
+    assert_includes models, "claude-opus-4-8"
+    assert_includes models, "claude-sonnet-5"
+    assert_includes models, "claude-haiku-4-5"
   end
 
   def test_default_model
-    assert_equal "claude-sonnet-4-20250514", @provider.model_name
+    assert_equal "claude-opus-4-8", @provider.model_name
   end
 
   def test_chat_sends_correct_headers

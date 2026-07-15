@@ -30,7 +30,7 @@ vi .lyorishirorc
 
 ```ruby
 # ~/.yorishirorc
-use provider: :anthropic, api_key: ENV["ANTHROPIC_API_KEY"], model: "claude-sonnet-4-20250514"
+use provider: :anthropic, api_key: ENV["ANTHROPIC_API_KEY"], model: "claude-opus-4-8"
 
 allow_tool Yorishiro::Tools::ReadFile.new
 allow_tool Yorishiro::Tools::WriteFile.new
@@ -50,7 +50,7 @@ yorishiro
 ```
 
 ```
-Yorishiro v0.1.0 (anthropic:claude-sonnet-4-20250514)
+Yorishiro v0.1.0 (anthropic:claude-opus-4-8)
 Type your message (Enter twice to send, /help for commands)
 
 you> Hello!
@@ -133,7 +133,7 @@ Configuration files use a Ruby DSL. Loading order (later overrides earlier):
 
 ```ruby
 # Anthropic (Claude)
-use provider: :anthropic, api_key: ENV["ANTHROPIC_API_KEY"], model: "claude-sonnet-4-20250514"
+use provider: :anthropic, api_key: ENV["ANTHROPIC_API_KEY"], model: "claude-opus-4-8"
 
 # OpenAI (ChatGPT)
 use provider: :open_ai, api_key: ENV["OPENAI_API_KEY"], model: "gpt-4o"
@@ -146,8 +146,8 @@ use provider: :ollama, model: "llama3.1"
 
 | Provider | Models |
 |----------|--------|
-| Anthropic | claude-opus-4-20250514, claude-sonnet-4-20250514, claude-haiku-4-20250414, claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022 |
-| OpenAI | gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-4, gpt-3.5-turbo, o1, o1-mini, o3-mini |
+| Anthropic | claude-fable-5, claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, claude-opus-4-5, claude-sonnet-5, claude-sonnet-4-6, claude-sonnet-4-5, claude-haiku-4-5 |
+| OpenAI | gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-4, gpt-3.5-turbo |
 | Ollama | Any model available on your Ollama instance (dynamically fetched) |
 
 ### Tool Settings
@@ -333,7 +333,7 @@ Only an explicit `deny("reason")` (or `:deny`) return value vetoes the action â€
 
 use provider: :anthropic,
     api_key: ENV["ANTHROPIC_API_KEY"],
-    model: "claude-sonnet-4-20250514"
+    model: "claude-opus-4-8"
 
 system_prompt <<~PROMPT
   You are a helpful coding assistant.
