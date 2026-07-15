@@ -197,13 +197,23 @@ module Yorishiro
         content = result[:content]
         tool_calls = result[:tool_calls]
 
-        @conversation.add_message(:assistant, content, tool_calls: tool_calls.empty? ? nil : tool_calls)
+        record_assistant_message(content, tool_calls)
 
         break if tool_calls.empty?
 
         execute_tool_calls(tool_calls)
         persist_session # long tool loops save progressively
       end
+    end
+
+    # Record the assistant turn, unless the model returned nothing at all:
+    # Anthropic rejects empty assistant content on every later request, so
+    # one empty completion would poison the history and brick the session
+    # until /clear (warn_if_empty_or_truncated already told the user).
+    def record_assistant_message(content, tool_calls)
+      return if tool_calls.empty? && content.to_s.strip.empty?
+
+      @conversation.add_message(:assistant, content, tool_calls: tool_calls.empty? ? nil : tool_calls)
     end
 
     # Keep the conversation within the provider's context budget, stream one
@@ -304,7 +314,7 @@ module Yorishiro
         content = result[:content]
         tool_calls = result[:tool_calls]
 
-        @conversation.add_message(:assistant, content, tool_calls: tool_calls.empty? ? nil : tool_calls)
+        record_assistant_message(content, tool_calls)
 
         break if tool_calls.empty?
 

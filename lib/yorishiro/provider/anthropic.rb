@@ -51,7 +51,7 @@ module Yorishiro
       end
 
       def format_messages(api_messages)
-        messages = api_messages.reject { |m| m[:role] == "system" }
+        messages = api_messages.reject { |m| m[:role] == "system" || empty_assistant?(m) }
 
         messages.map do |msg|
           if msg[:role] == "tool"
@@ -79,6 +79,14 @@ module Yorishiro
             { role: msg[:role], content: msg[:content] }
           end
         end
+      end
+
+      # The API rejects assistant messages whose content is empty, and the
+      # error repeats on every request — so an empty completion recorded in
+      # the history (e.g. by a session saved before the CLI filtered them
+      # out) is dropped rather than poisoning the whole session.
+      def empty_assistant?(msg)
+        msg[:role] == "assistant" && msg[:tool_calls].to_a.empty? && msg[:content].to_s.strip.empty?
       end
 
       def extract_system_prompt(api_messages)

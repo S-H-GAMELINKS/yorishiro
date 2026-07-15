@@ -88,6 +88,33 @@ class TestProviderAnthropic < Minitest::Test
     assert_raises(Yorishiro::ProviderError) { @provider.chat(@conversation) }
   end
 
+  def test_chat_drops_empty_assistant_messages_from_history
+    stub_anthropic_stream("Hello!")
+    @conversation.add_message(:assistant, "") # e.g. restored from an old saved session
+    @conversation.add_message(:user, "Are you there?")
+
+    @provider.chat(@conversation)
+
+    assert_requested(:post, "https://api.anthropic.com/v1/messages") do |req|
+      roles = JSON.parse(req.body)["messages"].map { |m| m["role"] }
+      roles == %w[user user] # the empty assistant message was dropped
+    end
+  end
+
+  def test_chat_keeps_assistant_message_with_tool_calls_but_no_text
+    stub_anthropic_stream("Hello!")
+    @conversation.add_message(:assistant, "", tool_calls: [{ id: "tc_1", name: "read_file", arguments: {} }])
+    @conversation.add_tool_result(tool_call_id: "tc_1", content: "file contents")
+
+    @provider.chat(@conversation)
+
+    assert_requested(:post, "https://api.anthropic.com/v1/messages") do |req|
+      messages = JSON.parse(req.body)["messages"]
+      tool_use = messages.dig(1, "content", 0)
+      messages.length == 3 && tool_use["type"] == "tool_use" && tool_use["id"] == "tc_1"
+    end
+  end
+
   def test_chat_reports_usage
     body = sse_events([
                         { event: "message_start",
