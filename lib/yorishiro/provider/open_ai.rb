@@ -5,15 +5,15 @@ module Yorishiro
     class OpenAI < Base
       API_URL = "https://api.openai.com/v1/chat/completions"
 
+      # Chat-completions models compatible with this client, which always
+      # streams and sends system messages and tools — the o1/o3 reasoning
+      # series rejects parts of that flow, so it is intentionally absent.
       SUPPORTED_MODELS = %w[
         gpt-4o
         gpt-4o-mini
         gpt-4-turbo
         gpt-4
         gpt-3.5-turbo
-        o1
-        o1-mini
-        o3-mini
       ].freeze
 
       def self.supported_models

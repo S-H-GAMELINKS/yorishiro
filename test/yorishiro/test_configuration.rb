@@ -9,10 +9,10 @@ class TestConfiguration < Minitest::Test
   end
 
   def test_use_sets_provider
-    @config.use(provider: :anthropic, api_key: "test-key", model: "claude-sonnet-4-20250514")
+    @config.use(provider: :anthropic, api_key: "test-key", model: "claude-opus-4-8")
     assert_equal :anthropic, @config.provider_name
     assert_equal "test-key", @config.api_key
-    assert_equal "claude-sonnet-4-20250514", @config.model
+    assert_equal "claude-opus-4-8", @config.model
   end
 
   def test_use_with_open_ai
@@ -122,32 +122,32 @@ class TestConfiguration < Minitest::Test
   end
 
   def test_validate_supported_model
-    @config.use(provider: :anthropic, api_key: "test-key", model: "claude-sonnet-4-20250514")
+    @config.use(provider: :anthropic, api_key: "test-key", model: "claude-opus-4-8")
     @config.validate!
-    assert_equal "claude-sonnet-4-20250514", @config.model
+    assert_equal "claude-opus-4-8", @config.model
   end
 
   def test_switch_changes_model_and_keeps_api_key
-    @config.use(provider: :anthropic, api_key: "test-key", model: "claude-sonnet-4-20250514")
+    @config.use(provider: :anthropic, api_key: "test-key", model: "claude-opus-4-8")
 
-    @config.switch!(provider: :anthropic, model: "claude-3-5-haiku-20241022", api_key: @config.api_key)
+    @config.switch!(provider: :anthropic, model: "claude-haiku-4-5", api_key: @config.api_key)
 
-    assert_equal "claude-3-5-haiku-20241022", @config.model
+    assert_equal "claude-haiku-4-5", @config.model
     assert_equal "test-key", @config.api_key
   end
 
   def test_switch_rolls_back_on_unsupported_model
-    @config.use(provider: :anthropic, api_key: "test-key", model: "claude-sonnet-4-20250514")
+    @config.use(provider: :anthropic, api_key: "test-key", model: "claude-opus-4-8")
 
     assert_raises(Yorishiro::ConfigurationError) do
       @config.switch!(provider: :anthropic, model: "bogus-model", api_key: "test-key")
     end
 
-    assert_equal "claude-sonnet-4-20250514", @config.model # unchanged
+    assert_equal "claude-opus-4-8", @config.model # unchanged
   end
 
   def test_switch_rolls_back_on_missing_api_key
-    @config.use(provider: :anthropic, api_key: "test-key", model: "claude-sonnet-4-20250514")
+    @config.use(provider: :anthropic, api_key: "test-key", model: "claude-opus-4-8")
 
     assert_raises(Yorishiro::ConfigurationError) do
       @config.switch!(provider: :open_ai, model: "gpt-4o", api_key: nil)
@@ -310,10 +310,10 @@ class TestConfiguration < Minitest::Test
       local_rc = File.join(dir, ".lyorishirorc")
 
       File.write(global_rc, <<~RC)
-        use provider: :anthropic, api_key: "global-key", model: "claude-sonnet-4-20250514"
+        use provider: :anthropic, api_key: "global-key", model: "claude-opus-4-8"
       RC
       File.write(local_rc, <<~RC)
-        use provider: :anthropic, api_key: "local-key", model: "claude-sonnet-4-20250514"
+        use provider: :anthropic, api_key: "local-key", model: "claude-opus-4-8"
       RC
 
       @config.stub(:global_rc_path, global_rc) do

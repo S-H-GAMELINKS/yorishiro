@@ -13,7 +13,7 @@ class TestProviderOpenAI < Minitest::Test
     models = Yorishiro::Provider::OpenAI.supported_models
     assert_includes models, "gpt-4o"
     assert_includes models, "gpt-4o-mini"
-    assert_includes models, "o3-mini"
+    refute_includes models, "o1-mini" # rejects this client's streaming/system/tool flow
   end
 
   def test_default_model
