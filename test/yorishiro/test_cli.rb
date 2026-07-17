@@ -971,14 +971,12 @@ class TestCLI < Minitest::Test
     @cli.instance_variable_set(:@session_id, nil)
   end
 
-  def simulate_input(text)
+  def simulate_input(text, &)
     old_stdin = $stdin
     $stdin = StringIO.new(text)
     # Reline.readline receives (prompt, add_hist) — return the simulated text
     fake_readline = ->(_prompt, _add_hist = false) { text }
-    Reline.stub(:readline, fake_readline) do
-      yield
-    end
+    Reline.stub(:readline, fake_readline, &)
   ensure
     $stdin = old_stdin
   end

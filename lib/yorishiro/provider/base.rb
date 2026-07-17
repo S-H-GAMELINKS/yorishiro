@@ -29,8 +29,8 @@ module Yorishiro
       def debug_log(label, data = nil)
         return unless debug?
 
-        $stderr.puts "[DEBUG] #{label}"
-        $stderr.puts(data.is_a?(String) ? data : JSON.pretty_generate(data)) if data
+        warn "[DEBUG] #{label}"
+        warn(data.is_a?(String) ? data : JSON.pretty_generate(data)) if data
       rescue StandardError
         nil
       end
