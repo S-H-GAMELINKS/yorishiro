@@ -26,7 +26,7 @@ module Yorishiro
         []
       end
 
-      def chat(conversation, tools: [], &block)
+      def chat(conversation, tools: [], &)
         uri = URI("#{@base_url}/api/chat")
 
         body = {
@@ -44,7 +44,7 @@ module Yorishiro
         debug_log("Ollama request", body)
 
         @last_meta = {}
-        result = post_stream(uri, headers: headers, body: body, &block)
+        result = post_stream(uri, headers: headers, body: body, &)
         result[:meta] = @last_meta
         result[:usage] = { input: @last_meta[:prompt_eval_count], output: @last_meta[:eval_count] }
         debug_log("Ollama response", result)
